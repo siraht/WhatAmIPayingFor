@@ -1,0 +1,9 @@
+node_modules
+bun.lock
+.env
+state
+*.db
+*.sqlite
+*.sqlite3
+dist
+.DS_Store

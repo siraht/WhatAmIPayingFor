@@ -1,0 +1,24 @@
+{
+  "name": "fintrack",
+  "version": "0.1.0",
+  "description": "Terminal-first recurring transaction tracker using YNAB + Proton Mail Bridge",
+  "type": "module",
+  "bin": {
+    "fintrack": "./bin/fintrack"
+  },
+  "scripts": {
+    "start": "bun run src/cli.ts",
+    "dev": "bun run src/cli.ts",
+    "test": "bun test",
+    "build": "bun build src/cli.ts --outfile dist/fintrack --target bun"
+  },
+  "dependencies": {
+    "commander": "^13.1.0",
+    "imapflow": "^1.1.1",
+    "mailparser": "^3.9.0"
+  },
+  "devDependencies": {
+    "bun-types": "^1.2.21",
+    "typescript": "^5.9.2"
+  }
+}
