@@ -34,6 +34,13 @@ describe("CLI validation", () => {
     expect(stderr).toContain("INVALID_DATE_FORMAT");
   });
 
+  test("rejects impossible calendar date for --since", () => {
+    const proc = run(["sync", "ynab", "--since", "2026-02-30"]);
+    expect(proc.exitCode).toBe(2);
+    const stderr = new TextDecoder().decode(proc.stderr);
+    expect(stderr).toContain("INVALID_DATE_FORMAT");
+  });
+
   test("rejects invalid sync-all days before source config checks", () => {
     const proc = run(["sync", "all", "--days", "-2"]);
     expect(proc.exitCode).toBe(2);
@@ -56,5 +63,37 @@ describe("CLI validation", () => {
     expect(proc.exitCode).toBe(2);
     const stderr = new TextDecoder().decode(proc.stderr);
     expect(stderr).toContain("INVALID_INTEGER_RANGE");
+  });
+
+  test("rejects empty folders list", () => {
+    const proc = run([
+      "setup",
+      "email",
+      "--imap-user",
+      "user@example.com",
+      "--imap-pass-cmd",
+      "echo pass",
+      "--folders",
+      "",
+      "--no-probe-bridge",
+      "--dry-run",
+    ]);
+    expect(proc.exitCode).toBe(2);
+    const stderr = new TextDecoder().decode(proc.stderr);
+    expect(stderr).toContain("EMAIL_SETUP_FOLDERS_EMPTY");
+  });
+
+  test("rejects partial integer values for numeric flags", () => {
+    const proc = run(["report", "upcoming", "--days", "12abc"]);
+    expect(proc.exitCode).toBe(2);
+    const stderr = new TextDecoder().decode(proc.stderr);
+    expect(stderr).toContain("INVALID_INTEGER_RANGE");
+  });
+
+  test("rejects partial float values for numeric flags", () => {
+    const proc = run(["report", "upcoming", "--min-confidence", "0.5abc"]);
+    expect(proc.exitCode).toBe(2);
+    const stderr = new TextDecoder().decode(proc.stderr);
+    expect(stderr).toContain("INVALID_CONFIDENCE");
   });
 });
