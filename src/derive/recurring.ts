@@ -1,6 +1,7 @@
 import type { FintrackDb } from "../db";
 import type { RulesIndex } from "../rules";
 import { clampDayToMonth, diffDays, isoNow, parseIsoDate } from "../utils/time";
+import { merchantKey } from "../utils/text";
 
 interface TxnRow {
   ynab_transaction_id: string;
@@ -179,7 +180,9 @@ export const recomputeRecurring = (db: FintrackDb, rules: RulesIndex): Recompute
     if (row.deleted) {
       continue;
     }
-    const key = (row.payee_name || "unknown").toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+    const rawKey = merchantKey(row.payee_name || "unknown");
+    const aliased = rules.aliasByRawKey.get(rawKey);
+    const key = merchantKey(aliased ?? rawKey);
     if (!key) {
       continue;
     }

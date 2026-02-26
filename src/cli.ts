@@ -13,10 +13,27 @@ import { minorToDisplay } from "./utils/money";
 
 const numberParser = (value: string): number => Number.parseInt(value, 10);
 const floatParser = (value: string): number => Number.parseFloat(value);
-const mergeParentOptions = (command: Command, options: Record<string, unknown>): Record<string, unknown> => ({
-  ...(command.parent?.opts?.() ?? {}),
-  ...options,
-});
+const mergeParentOptions = (command: Command, options: Record<string, unknown>): Record<string, unknown> => {
+  const merged: Record<string, unknown> = { ...(command.parent?.opts?.() ?? {}) };
+  const getSource =
+    typeof (command as unknown as { getOptionValueSource?: (key: string) => string | undefined }).getOptionValueSource ===
+    "function"
+      ? (command as unknown as { getOptionValueSource: (key: string) => string | undefined }).getOptionValueSource.bind(
+          command
+        )
+      : null;
+  for (const [key, value] of Object.entries(options)) {
+    if (value === undefined) {
+      continue;
+    }
+    const source = getSource ? getSource(key) : undefined;
+    if (source === "default" && merged[key] !== undefined) {
+      continue;
+    }
+    merged[key] = value;
+  }
+  return merged;
+};
 
 const getFlags = (command: Command): GlobalFlags => {
   const opts = command.optsWithGlobals();

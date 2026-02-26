@@ -152,6 +152,14 @@ export const runSyncAll = async (ctx: RuntimeContext, options: SyncAllOptions): 
   exitCode: number;
   data: unknown;
 }> => {
+  const normalizedSince = options.since ? requireIsoDate("--since", options.since) : undefined;
+  const normalizedDays = requireIntegerInRange("--days", options.days ?? 365, { min: 1, max: 36500 });
+  const normalizedOptions: SyncAllOptions = {
+    ...options,
+    since: normalizedSince,
+    days: normalizedDays,
+  };
+
   const warnings: Array<{ stage: string; error: string; code?: string }> = [];
   const data: Record<string, unknown> = {
     action: "sync.all",
@@ -160,9 +168,12 @@ export const runSyncAll = async (ctx: RuntimeContext, options: SyncAllOptions): 
   let successfulStages = 0;
 
   try {
-    data.ynab = await runSyncYnab(ctx, options);
+    data.ynab = await runSyncYnab(ctx, normalizedOptions);
     successfulStages += 1;
   } catch (error) {
+    if (isAppError(error) && error.exitCode === EXIT.INVALID_ARGS) {
+      throw error;
+    }
     const message = error instanceof Error ? error.message : String(error);
     warnings.push({
       stage: "sync.ynab",
@@ -172,9 +183,12 @@ export const runSyncAll = async (ctx: RuntimeContext, options: SyncAllOptions): 
   }
 
   try {
-    data.email = await runSyncEmail(ctx, options);
+    data.email = await runSyncEmail(ctx, normalizedOptions);
     successfulStages += 1;
   } catch (error) {
+    if (isAppError(error) && error.exitCode === EXIT.INVALID_ARGS) {
+      throw error;
+    }
     const message = error instanceof Error ? error.message : String(error);
     warnings.push({
       stage: "sync.email",
@@ -183,7 +197,7 @@ export const runSyncAll = async (ctx: RuntimeContext, options: SyncAllOptions): 
     });
   }
 
-  if (successfulStages > 0 && !options.dryRun && ctx.db) {
+  if (successfulStages > 0 && !normalizedOptions.dryRun && ctx.db) {
     const rules = await loadRulesFile(ctx.paths);
     data.derived = recomputeDerivedLayers(ctx.db, ctx.config, rules);
   }

@@ -131,10 +131,14 @@ const isCandidateMessage = (senderDomain: string, subject: string): boolean => {
 
 const pickAmount = (text: string): { amount: number; currency: string; evidence: "item_price" | "order_total" } | null => {
   const normalized = text.replace(/\s+/g, " ");
+  const amountPattern = "([0-9]+(?:,[0-9]{3})*(?:\\.\\d{2})?)";
 
   const keywordRegex =
-    /(?:order total|total charged|amount charged|payment total|charged|invoice total)[^$€£\d]{0,24}([$€£])\s?([0-9]{1,3}(?:,[0-9]{3})*(?:\.\d{2})?)/gi;
-  const genericRegex = /([$€£])\s?([0-9]{1,3}(?:,[0-9]{3})*(?:\.\d{2})?)/g;
+    new RegExp(
+      `(?:order total|total charged|amount charged|payment total|charged|invoice total)[^$€£\\\\d]{0,24}([$€£])\\\\s?${amountPattern}`,
+      "gi"
+    );
+  const genericRegex = new RegExp(`([$€£])\\\\s?${amountPattern}`, "g");
 
   const parse = (symbol: string, amountRaw: string): { amount: number; currency: string } | null => {
     const parsed = Number(amountRaw.replace(/,/g, ""));
@@ -221,12 +225,24 @@ const extractOutcome = async (rawSource: Buffer, subject: string, candidate: boo
   }
 };
 
+const buildLogicalDedupeKey = (messageIdHash: string, senderDomain: string, datetimeIso: string): string => {
+  const timestampBucket = Math.floor(new Date(datetimeIso).getTime() / (10 * 60 * 1000));
+  return `${messageIdHash}:${senderDomain}:${timestampBucket}`;
+};
+
 const findCanonicalEvidenceId = (
   db: FintrackDb,
   messageIdHash: string,
   senderDomain: string,
-  datetimeIso: string
+  datetimeIso: string,
+  pendingByLogicalKey: Map<string, string>
 ): string => {
+  const logicalKey = buildLogicalDedupeKey(messageIdHash, senderDomain, datetimeIso);
+  const pendingCanonical = pendingByLogicalKey.get(logicalKey);
+  if (pendingCanonical) {
+    return pendingCanonical;
+  }
+
   const candidates = db.db
     .query(
       `SELECT canonical_email_evidence_id, datetime
@@ -250,11 +266,14 @@ const findCanonicalEvidenceId = (
       continue;
     }
     if (Math.abs(ms - targetMs) <= 10 * 60 * 1000) {
+      pendingByLogicalKey.set(logicalKey, candidate.canonical_email_evidence_id);
       return candidate.canonical_email_evidence_id;
     }
   }
 
-  return sha256(`${messageIdHash}:${senderDomain}:${Math.floor(targetMs / (10 * 60 * 1000))}`);
+  const canonical = sha256(logicalKey);
+  pendingByLogicalKey.set(logicalKey, canonical);
+  return canonical;
 };
 
 const upsertRawEmail = (
@@ -370,6 +389,7 @@ export const syncEmail = async (
       try {
         const mailbox = client.mailbox;
         const uidValidity = mailbox === false ? "0" : String(mailbox?.uidValidity ?? "0");
+        const mailboxMaxUid = mailbox === false ? 0 : Math.max(0, Number((mailbox?.uidNext ?? 1) - 1));
         const scope = `account:${config.accountLabel}:folder:${folder}`;
         const cursor = options.resetCursor ? null : getSyncCursor(db, "email", scope);
         const hasCursor =
@@ -429,7 +449,7 @@ export const syncEmail = async (
           if (!options.dryRun) {
             const cursorPayload = {
               uidvalidity: uidValidity,
-              last_uid: Number(cursor?.last_uid ?? 0),
+              last_uid: hasCursor ? Number(cursor?.last_uid ?? 0) : mailboxMaxUid,
               last_seen_datetime: cursor?.last_seen_datetime ?? null,
               updated_at: isoNow(),
             };
@@ -443,6 +463,7 @@ export const syncEmail = async (
         let lastSeenDatetime: string | null = hasCursor
           ? (String(cursor?.last_seen_datetime ?? "") || null)
           : null;
+        const pendingCanonicalByLogicalKey = new Map<string, string>();
 
         const pendingRows: Array<{
           messageKey: string;
@@ -513,7 +534,8 @@ export const syncEmail = async (
             db,
             messageIdHash,
             senderDomain,
-            datetimeIso
+            datetimeIso,
+            pendingCanonicalByLogicalKey
           );
 
           pendingRows.push({

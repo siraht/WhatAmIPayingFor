@@ -1,9 +1,11 @@
 import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
+import { AppError } from "./errors";
 import {
   DEFAULT_CURRENCY,
   DEFAULT_PARSER_VERSION,
   DEFAULT_TIMEZONE,
+  EXIT,
 } from "./constants";
 import type { FintrackConfig, RuntimePaths } from "./types";
 import { ensureParentDir, ensureStateDir } from "./utils/paths";
@@ -36,7 +38,19 @@ export const loadConfig = async (paths: RuntimePaths): Promise<FintrackConfig> =
   }
 
   const raw = await readFile(paths.configPath, "utf8");
-  const parsed = JSON.parse(raw) as Partial<FintrackConfig>;
+  let parsed: Partial<FintrackConfig>;
+  try {
+    parsed = JSON.parse(raw) as Partial<FintrackConfig>;
+  } catch (error) {
+    throw new AppError("Config file is not valid JSON", {
+      exitCode: EXIT.RUNTIME,
+      code: "CONFIG_PARSE_FAILED",
+      details: {
+        configPath: paths.configPath,
+        cause: error instanceof Error ? error.message : String(error),
+      },
+    });
+  }
   return {
     ...createDefaultConfig(),
     ...parsed,
@@ -70,7 +84,19 @@ export const ensureRulesFile = async (paths: RuntimePaths): Promise<void> => {
 export const loadRulesFile = async (paths: RuntimePaths): Promise<RulesFile> => {
   await ensureRulesFile(paths);
   const raw = await readFile(paths.rulesPath, "utf8");
-  const parsed = JSON.parse(raw) as Partial<RulesFile>;
+  let parsed: Partial<RulesFile>;
+  try {
+    parsed = JSON.parse(raw) as Partial<RulesFile>;
+  } catch (error) {
+    throw new AppError("Rules file is not valid JSON", {
+      exitCode: EXIT.RUNTIME,
+      code: "RULES_PARSE_FAILED",
+      details: {
+        rulesPath: paths.rulesPath,
+        cause: error instanceof Error ? error.message : String(error),
+      },
+    });
+  }
   return {
     aliases: parsed.aliases ?? {},
     ignore: parsed.ignore ?? [],

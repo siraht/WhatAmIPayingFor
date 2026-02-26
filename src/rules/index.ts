@@ -40,7 +40,7 @@ export const loadRulesIntoTables = (db: FintrackDb, rules: RulesFile): RulesInde
       if (!key) {
         continue;
       }
-      insertIgnore.run(key, item.reason ?? "");
+      insertIgnore.run(key, item.reason ?? "", now);
     }
 
     for (const item of rules.force) {

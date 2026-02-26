@@ -149,11 +149,11 @@ export const recomputeMatches = (db: FintrackDb): RecomputeMatchesResult => {
        FROM normalized_email_purchase`
     )
     .all() as EmailRow[];
+  const emailRowsWithDatetime = emailRows.filter((row) => row.datetime);
 
   const allCandidates: MatchCandidate[] = [];
   for (const tx of txRows) {
-    const scoped = emailRows.filter((row) => row.datetime);
-    for (const email of scoped) {
+    for (const email of emailRowsWithDatetime) {
       const candidate = scoreCandidate(tx, email);
       if (candidate) {
         allCandidates.push(candidate);
