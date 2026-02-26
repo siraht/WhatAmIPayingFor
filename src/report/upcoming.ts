@@ -1,5 +1,5 @@
 import type { FintrackDb } from "../db";
-import { parseIsoDate } from "../utils/time";
+import { diffDays, parseIsoDate } from "../utils/time";
 
 interface CandidateRow {
   id: number;
@@ -8,6 +8,7 @@ interface CandidateRow {
   cadence: string;
   typical_amount_minor: number;
   currency: string;
+  last_seen_date: string;
   predicted_next_date: string;
   confidence: number;
   reason_codes: string;
@@ -70,6 +71,34 @@ const advanceCadence = (date: Date, cadence: string): Date => {
   }
 };
 
+const cadenceIntervalDays = (cadence: string): number => {
+  switch (cadence) {
+    case "weekly":
+      return 7;
+    case "biweekly":
+      return 14;
+    case "every_4_weeks":
+      return 28;
+    case "monthly":
+      return 30;
+    case "quarterly":
+      return 91;
+    case "yearly":
+      return 365;
+    default:
+      return 30;
+  }
+};
+
+const isStaleForForecast = (candidate: CandidateRow, fromDate: string): boolean => {
+  if (candidate.predicted_next_date >= fromDate) {
+    return false;
+  }
+  const daysSinceLastSeen = Math.max(0, diffDays(fromDate, candidate.last_seen_date));
+  const staleThreshold = Math.max(90, cadenceIntervalDays(candidate.cadence) * 4);
+  return daysSinceLastSeen > staleThreshold;
+};
+
 const mondayOfWeek = (isoDate: string): string => {
   const date = parseIsoDate(isoDate);
   const weekday = date.getUTCDay();
@@ -88,7 +117,7 @@ export const reportUpcoming = (db: FintrackDb, days: number, minConfidence: numb
   const candidates = db.db
     .query(
       `SELECT id, merchant_key, merchant_display, cadence,
-              typical_amount_minor, currency, predicted_next_date,
+              typical_amount_minor, currency, last_seen_date, predicted_next_date,
               confidence, reason_codes
        FROM recurring_candidate
        WHERE confidence >= ?`
@@ -98,6 +127,9 @@ export const reportUpcoming = (db: FintrackDb, days: number, minConfidence: numb
   const rows: UpcomingRow[] = [];
   const maxIterations = Math.max(64, Math.ceil(days / 7) + 8);
   for (const candidate of candidates) {
+    if (isStaleForForecast(candidate, fromDate)) {
+      continue;
+    }
     let cursor = parseIsoDate(candidate.predicted_next_date);
     const endMs = horizon.getTime();
     let guard = 0;

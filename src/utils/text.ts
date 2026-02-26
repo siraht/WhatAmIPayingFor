@@ -42,9 +42,32 @@ export const jaccardSimilarity = (a: string, b: string): number => {
 
 export const rootDomain = (input: string): string => {
   const host = input.toLowerCase().replace(/^.*@/, "").replace(/^www\./, "");
+  if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(host)) {
+    return host;
+  }
   const parts = host.split(".").filter(Boolean);
   if (parts.length <= 2) {
     return host;
   }
-  return parts.slice(-2).join(".");
+
+  const secondLevelSuffixes = new Set([
+    "co.uk",
+    "org.uk",
+    "gov.uk",
+    "ac.uk",
+    "com.au",
+    "net.au",
+    "org.au",
+    "co.nz",
+    "co.jp",
+    "com.br",
+    "com.mx",
+  ]);
+
+  const suffix = parts.slice(-2).join(".");
+  if (secondLevelSuffixes.has(suffix) && parts.length >= 3) {
+    return parts.slice(-3).join(".");
+  }
+
+  return suffix;
 };
