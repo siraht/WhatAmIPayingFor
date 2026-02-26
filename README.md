@@ -23,6 +23,14 @@ bun run src/cli.ts --help
 ./bin/fintrack --help
 ```
 
+## Environment (.env)
+
+```bash
+cp .env.example .env
+```
+
+`.env` is ignored by git. Use it for secrets like `YNAB_TOKEN` and optional `FINTRACK_IMAP_PASS`.
+
 ## Quickstart
 
 ```bash
@@ -35,6 +43,11 @@ fintrack setup email \
   --imap-port 1143 \
   --imap-user "<bridge-user>" \
   --imap-pass-cmd "pass show fintrack/bridge"
+
+# or use .env-backed password:
+fintrack setup email \
+  --imap-user "<bridge-user>" \
+  --imap-pass-cmd "printf '%s' \"$FINTRACK_IMAP_PASS\""
 
 # Sync all sources then recompute derived layers
 fintrack sync all --days 365
