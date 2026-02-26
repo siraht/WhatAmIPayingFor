@@ -650,3 +650,64 @@ For live integration once credentials are available:
 - Live YNAB and Proton Bridge smoke tests remain pending until credentials are provided.
 - Email parsing heuristics are intentionally conservative for MVP and should be refined against captured `.eml` samples.
 - Foreign-currency handling currently avoids hard amount matching when currency differs; conversion integration is not yet implemented.
+
+## 17) Fresh-Eyes QA Pass (2026-02-26)
+
+A full post-implementation audit was run with static checks, CLI probes, and new regression tests.
+
+### 17.1 Issues found and fixed
+
+1. `sync email --dry-run` wrote data to SQLite
+- Problem: dry-run mode still executed raw email upserts.
+- Fix: gate writes behind `!dryRun`; dry-run now inspects/parses but performs no DB writes or cursor updates.
+- File: `src/ingest/email.ts`
+
+2. Invalid numeric/date flags were inconsistently validated
+- Problem examples:
+  - `report spend --month bad` returned runtime error (`exit 1`) instead of invalid args.
+  - `report upcoming --days -5` returned success with reversed date window.
+  - `sync ynab --since not-a-date` could bypass format validation.
+  - `setup email --imap-port 70000` was accepted.
+- Fix:
+  - Added central validators (`src/utils/validate.ts`) for ISO date, YYYY-MM, integer range, enum.
+  - Enforced validation in setup/sync/report command handlers.
+  - Invalid input now maps to `exit 2` with structured error codes.
+
+3. `sync` parent/subcommand flag capture caused option loss
+- Problem: duplicated flags at `sync` and `sync <subcommand>` levels could be captured only on parent, making subcommand handlers miss user input.
+- Fix: subcommand actions merge parent options before execution.
+- File: `src/cli.ts`
+
+4. Split child transactions could be counted toward spend
+- Problem: normalized spend eligibility did not explicitly exclude child split transactions (`parent_transaction_id` rows), allowing double counting risk.
+- Fix: include `parent_transaction_id` in normalization query and exclude child rows with reason `R_SUBTRANSACTION_CHILD`.
+- File: `src/normalize/transactions.ts`
+
+5. Upcoming forecast could truncate long weekly horizons
+- Problem: hardcoded loop guard (`64`) capped projections for long horizons.
+- Fix: dynamic iteration budget derived from forecast horizon.
+- File: `src/report/upcoming.ts`
+
+6. Human output hardcoded totals currency as USD
+- Problem: spend/upcoming totals display ignored configured currency.
+- Fix: carry configured currency from command layer and render with that currency.
+- Files: `src/commands/report.ts`, `src/cli.ts`
+
+### 17.2 Regression tests added
+
+- `test/cli-validation.test.ts`
+  - invalid month rejected
+  - negative upcoming days rejected
+  - invalid sync `--since` rejected
+  - IMAP port out-of-range rejected
+- `test/normalize-transactions.test.ts`
+  - split child transaction excluded from spend
+- `test/report-upcoming.test.ts`
+  - long weekly horizon not truncated near 64 occurrences
+
+### 17.3 Verification results after fixes
+
+- `bun x tsc --noEmit` -> pass
+- `bun test` -> pass (`10` passed, `0` failed)
+- Manual CLI probes confirm corrected exit semantics:
+  - invalid month/date/integer now return `exit 2` with explicit error codes.
