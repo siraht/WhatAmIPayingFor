@@ -73,4 +73,41 @@ describe("config loaders", () => {
     expect(rules.ignore).toEqual([{ merchant: "keep", reason: undefined }]);
     expect(rules.force).toEqual([{ merchant: "force", reason: undefined }]);
   });
+
+  test("normalizes malformed config fields to safe defaults", async () => {
+    const paths = makePaths();
+    writeFileSync(
+      paths.configPath,
+      JSON.stringify(
+        {
+          version: 999,
+          timezone: "",
+          currency: "usd$",
+          parserVersion: "",
+          ynab: {
+            tokenEnv: " ",
+            budgetId: "budget",
+            budgetSelector: "budget",
+          },
+          email: {
+            imapHost: "",
+            imapPort: 0,
+            imapUser: "user",
+            imapPassCmd: "cmd",
+            folders: [],
+          },
+        },
+        null,
+        2
+      ),
+      "utf8"
+    );
+
+    const config = await loadConfig(paths);
+    expect(config.version).toBe(1);
+    expect(config.currency).toBe("USD");
+    expect(config.parserVersion.length).toBeGreaterThan(0);
+    expect(config.ynab).toBeUndefined();
+    expect(config.email).toBeUndefined();
+  });
 });
