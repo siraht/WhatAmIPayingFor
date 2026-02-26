@@ -34,6 +34,13 @@ describe("CLI validation", () => {
     expect(stderr).toContain("INVALID_DATE_FORMAT");
   });
 
+  test("rejects invalid sync-all days before source config checks", () => {
+    const proc = run(["sync", "all", "--days", "-2"]);
+    expect(proc.exitCode).toBe(2);
+    const stderr = new TextDecoder().decode(proc.stderr);
+    expect(stderr).toContain("INVALID_INTEGER_RANGE");
+  });
+
   test("rejects imap port outside range", () => {
     const proc = run([
       "setup",
