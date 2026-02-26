@@ -866,3 +866,33 @@ A fourth pass focused on diagnostic correctness and runtime side effects.
 
 - `bun x tsc --noEmit` -> pass
 - `bun test` -> pass (`21` passed, `0` failed)
+
+## 21) Fresh-Eyes QA Pass #5 (2026-02-26)
+
+A fifth pass focused on forecast realism and merchant-domain normalization quality.
+
+### 21.1 Issues found and fixed
+
+1. Stale recurring candidates could still generate future upcoming charges
+- Problem: upcoming forecast advanced `predicted_next_date` repeatedly even when merchant activity was stale, causing canceled/abandoned subscriptions to reappear in projections.
+- Fix: added cadence-aware staleness guard before projection expansion.
+  - candidates are skipped when last-seen activity is beyond an interval-scaled stale threshold and predicted date is already in the past.
+- File: `src/report/upcoming.ts`
+
+2. Sender-domain normalization mishandled common ccTLD structures
+- Problem: addresses like `orders@payments.amazon.co.uk` normalized to `co.uk` instead of `amazon.co.uk`.
+- Impact: degraded email merchant matching quality in affected locales.
+- Fix: improved `rootDomain` extraction with second-level ccTLD handling and IP-host preservation.
+- File: `src/utils/text.ts`
+
+### 21.2 Tests added/updated
+
+- `test/report-upcoming.test.ts`
+  - added coverage ensuring stale candidates are excluded while active candidates still forecast.
+- `test/utils-text.test.ts`
+  - added domain normalization cases for standard domains, ccTLD second-level suffixes, and IP hosts.
+
+### 21.3 Verification
+
+- `bun x tsc --noEmit` -> pass
+- `bun test` -> pass (`25` passed, `0` failed)
