@@ -14,6 +14,7 @@ interface RawTxn {
   amount_milliunits: number;
   payee_name: string | null;
   memo: string | null;
+  parent_transaction_id: string | null;
   transfer_account_id: string | null;
   debt_transaction_type: string | null;
   category_name: string | null;
@@ -47,7 +48,7 @@ export const normalizeTransactions = (
   const rows = db.db
     .query(
       `SELECT ynab_transaction_id, budget_id, date, amount_milliunits, payee_name, memo,
-              transfer_account_id, debt_transaction_type, category_name, account_name,
+              parent_transaction_id, transfer_account_id, debt_transaction_type, category_name, account_name,
               deleted, updated_at, raw_json
        FROM raw_ynab_transaction`
     )
@@ -108,6 +109,11 @@ export const normalizeTransactions = (
       if (row.transfer_account_id) {
         includeInSpend = 0;
         reasons.push("R_TRANSFER");
+      }
+
+      if (row.parent_transaction_id) {
+        includeInSpend = 0;
+        reasons.push("R_SUBTRANSACTION_CHILD");
       }
 
       if ((row.debt_transaction_type || "").toLowerCase() === "payment") {

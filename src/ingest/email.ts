@@ -489,8 +489,8 @@ export const syncEmail = async (
           };
 
           if (shouldParseBody) {
-              const full = await client.fetchOne(msg.uid, { source: true });
-              const source = full === false ? undefined : full?.source;
+            const full = await client.fetchOne(msg.uid, { source: true });
+            const source = full === false ? undefined : full?.source;
             if (source) {
               stats.messagesParsed += 1;
               outcome = await extractOutcome(source as Buffer, subject, candidate);
@@ -542,23 +542,25 @@ export const syncEmail = async (
           });
         }
 
-        const tx = db.db.transaction(() => {
-          for (const row of pendingRows) {
-            upsertRawEmail(db, row);
-            stats.messagesUpserted += 1;
-          }
+        if (options.dryRun) {
+          stats.messagesUpserted += pendingRows.length;
+        } else {
+          const tx = db.db.transaction(() => {
+            for (const row of pendingRows) {
+              upsertRawEmail(db, row);
+              stats.messagesUpserted += 1;
+            }
 
-          if (!options.dryRun) {
             setSyncCursor(db, "email", scope, {
               uidvalidity: uidValidity,
               last_uid: maxUid,
               last_seen_datetime: lastSeenDatetime,
               updated_at: isoNow(),
             });
-          }
-        });
+          });
 
-        tx();
+          tx();
+        }
 
         stats.foldersProcessed += 1;
       } finally {

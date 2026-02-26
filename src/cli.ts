@@ -13,6 +13,10 @@ import { minorToDisplay } from "./utils/money";
 
 const numberParser = (value: string): number => Number.parseInt(value, 10);
 const floatParser = (value: string): number => Number.parseFloat(value);
+const mergeParentOptions = (command: Command, options: Record<string, unknown>): Record<string, unknown> => ({
+  ...(command.parent?.opts?.() ?? {}),
+  ...options,
+});
 
 const getFlags = (command: Command): GlobalFlags => {
   const opts = command.optsWithGlobals();
@@ -33,13 +37,14 @@ const printSuccess = (payload: any): void => {
   }
 
   if (action === "report.spend") {
+    const currency = payload.currency || "USD";
     const rows = payload.rows.map((row: any) => [
       row.key,
-      minorToDisplay(row.total_minor, "USD"),
+      minorToDisplay(row.total_minor, currency),
       row.txn_count,
     ]);
     printTable(["Group", "Total", "Transactions"], rows);
-    process.stdout.write(`\nMonth: ${payload.month}  Total: ${minorToDisplay(payload.totalMinor, "USD")}\n`);
+    process.stdout.write(`\nMonth: ${payload.month}  Total: ${minorToDisplay(payload.totalMinor, currency)}\n`);
     return;
   }
 
@@ -70,6 +75,7 @@ const printSuccess = (payload: any): void => {
   }
 
   if (action === "report.upcoming") {
+    const currency = payload.currency || "USD";
     const rows = payload.rows.map((row: any) => [
       row.date,
       row.merchant,
@@ -79,11 +85,11 @@ const printSuccess = (payload: any): void => {
     printTable(["Date", "Merchant", "Amount", "Confidence"], rows);
     process.stdout.write("\nDaily Totals:\n");
     for (const daily of payload.totalsByDay) {
-      process.stdout.write(`- ${daily.date}: ${minorToDisplay(daily.totalMinor, "USD")}\n`);
+      process.stdout.write(`- ${daily.date}: ${minorToDisplay(daily.totalMinor, currency)}\n`);
     }
     process.stdout.write("\nWeekly Totals:\n");
     for (const weekly of payload.totalsByWeek) {
-      process.stdout.write(`- ${weekly.weekStart}: ${minorToDisplay(weekly.totalMinor, "USD")}\n`);
+      process.stdout.write(`- ${weekly.weekStart}: ${minorToDisplay(weekly.totalMinor, currency)}\n`);
     }
     if (payload.visual) {
       process.stdout.write(`\n${payload.visual}\n`);
@@ -235,7 +241,8 @@ sync
   .option("--reset-cursor", "reset sync cursor")
   .option("--force", "skip reset confirmation")
   .action(async function syncYnabAction(options) {
-    await execute(this as Command, runSyncYnab, options);
+    const command = this as Command;
+    await execute(command, runSyncYnab, mergeParentOptions(command, options));
   });
 
 sync
@@ -247,7 +254,8 @@ sync
   .option("--reset-cursor", "reset sync cursor")
   .option("--force", "skip reset confirmation")
   .action(async function syncEmailAction(options) {
-    await execute(this as Command, runSyncEmail, options);
+    const command = this as Command;
+    await execute(command, runSyncEmail, mergeParentOptions(command, options));
   });
 
 sync
@@ -260,7 +268,8 @@ sync
   .option("--reset-cursor", "reset sync cursor")
   .option("--force", "skip reset confirmation")
   .action(async function syncAllAction(options) {
-    await execute(this as Command, runSyncAll, options, { allowExitCode: true });
+    const command = this as Command;
+    await execute(command, runSyncAll, mergeParentOptions(command, options), { allowExitCode: true });
   });
 
 const report = program.command("report").description("render spend and recurring reports");

@@ -1,17 +1,21 @@
 import { AppError } from "../errors";
+import { EXIT } from "../constants";
 import type { RuntimeContext } from "../runtime";
 import { loadRulesFile } from "../config";
 import { recomputeDerivedLayers } from "../pipeline";
 import { reportSpend, type SpendGroupBy } from "../report/spend";
 import { reportSubscriptions } from "../report/subscriptions";
 import { renderUpcomingVisual, reportUpcoming } from "../report/upcoming";
+import { requireIntegerInRange, requireOneOf, requireYearMonth } from "../utils/validate";
 
 const defaultMonth = (): string => new Date().toISOString().slice(0, 7);
 
 const validateConfidence = (value: number): void => {
-  if (value < 0 || value > 1) {
+  if (!Number.isFinite(value) || value < 0 || value > 1) {
     throw new AppError("--min-confidence must be between 0 and 1", {
+      exitCode: EXIT.INVALID_ARGS,
       code: "INVALID_CONFIDENCE",
+      details: { value },
     });
   }
 };
@@ -33,8 +37,12 @@ export interface ReportSpendOptions {
 
 export const runReportSpend = async (ctx: RuntimeContext, options: ReportSpendOptions): Promise<unknown> => {
   await recompute(ctx);
-  const month = options.month || defaultMonth();
-  const groupBy = options.groupBy || "merchant";
+  const month = requireYearMonth("--month", options.month || defaultMonth());
+  const groupBy = requireOneOf("--group-by", options.groupBy || "merchant", [
+    "merchant",
+    "category",
+    "account",
+  ]);
 
   if (!ctx.db) {
     throw new AppError("Database unavailable for report", { code: "DB_NOT_AVAILABLE" });
@@ -43,6 +51,7 @@ export const runReportSpend = async (ctx: RuntimeContext, options: ReportSpendOp
   const report = reportSpend(ctx.db, month, groupBy);
   return {
     action: "report.spend",
+    currency: ctx.config.currency,
     ...report,
   };
 };
@@ -59,7 +68,7 @@ export const runReportSubscriptions = async (
   options: ReportSubscriptionsOptions
 ): Promise<unknown> => {
   await recompute(ctx);
-  const month = options.month || defaultMonth();
+  const month = requireYearMonth("--month", options.month || defaultMonth());
   const minConfidence = options.minConfidence ?? 0.65;
   validateConfidence(minConfidence);
 
@@ -97,7 +106,7 @@ export interface ReportUpcomingOptions {
 
 export const runReportUpcoming = async (ctx: RuntimeContext, options: ReportUpcomingOptions): Promise<unknown> => {
   await recompute(ctx);
-  const days = options.days ?? 30;
+  const days = requireIntegerInRange("--days", options.days ?? 30, { min: 1, max: 36500 });
   const minConfidence = options.minConfidence ?? 0.65;
   validateConfidence(minConfidence);
 
@@ -110,6 +119,7 @@ export const runReportUpcoming = async (ctx: RuntimeContext, options: ReportUpco
 
   return {
     action: "report.upcoming",
+    currency: ctx.config.currency,
     ...report,
     visual,
   };

@@ -4,6 +4,7 @@ import type { RuntimeContext } from "../runtime";
 import { updateConfig } from "../config";
 import { YnabClient, resolveBudgetSelection } from "../ingest/ynab";
 import { probeBridge } from "../ingest/email";
+import { requireIntegerInRange } from "../utils/validate";
 
 export interface SetupYnabOptions {
   tokenEnv?: string;
@@ -69,7 +70,10 @@ export interface SetupEmailOptions {
 
 export const runSetupEmail = async (ctx: RuntimeContext, options: SetupEmailOptions): Promise<unknown> => {
   const imapHost = options.imapHost || EMAIL_DEFAULT_HOST;
-  const imapPort = options.imapPort || EMAIL_DEFAULT_PORT;
+  const imapPort = requireIntegerInRange("--imap-port", options.imapPort ?? EMAIL_DEFAULT_PORT, {
+    min: 1,
+    max: 65535,
+  });
   const folders = (options.folders || EMAIL_DEFAULT_FOLDERS.join(","))
     .split(",")
     .map((value) => value.trim())
@@ -79,6 +83,12 @@ export const runSetupEmail = async (ctx: RuntimeContext, options: SetupEmailOpti
     throw new AppError("setup email requires --imap-user and --imap-pass-cmd", {
       exitCode: EXIT.INVALID_ARGS,
       code: "EMAIL_SETUP_ARGS",
+    });
+  }
+  if (folders.length === 0) {
+    throw new AppError("--folders must include at least one mailbox", {
+      exitCode: EXIT.INVALID_ARGS,
+      code: "EMAIL_SETUP_FOLDERS_EMPTY",
     });
   }
 

@@ -96,11 +96,12 @@ export const reportUpcoming = (db: FintrackDb, days: number, minConfidence: numb
     .all(minConfidence) as CandidateRow[];
 
   const rows: UpcomingRow[] = [];
+  const maxIterations = Math.max(64, Math.ceil(days / 7) + 8);
   for (const candidate of candidates) {
     let cursor = parseIsoDate(candidate.predicted_next_date);
     const endMs = horizon.getTime();
     let guard = 0;
-    while (cursor.getTime() <= endMs && guard < 64) {
+    while (cursor.getTime() <= endMs && guard < maxIterations) {
       guard += 1;
       if (cursor.getTime() >= today.getTime()) {
         rows.push({

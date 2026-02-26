@@ -6,6 +6,7 @@ import { syncEmail } from "../ingest/email";
 import { loadRulesFile } from "../config";
 import { recomputeDerivedLayers } from "../pipeline";
 import { confirm } from "../utils/prompt";
+import { requireIntegerInRange, requireIsoDate } from "../utils/validate";
 
 export interface SyncYnabCommandOptions {
   since?: string;
@@ -54,6 +55,8 @@ export const runSyncYnab = async (
   ctx: RuntimeContext,
   options: SyncYnabCommandOptions
 ): Promise<unknown> => {
+  const since = options.since ? requireIsoDate("--since", options.since) : undefined;
+
   if (!ctx.config.ynab) {
     throw new AppError("YNAB is not configured. Run `fintrack setup ynab` first.", {
       exitCode: EXIT.INVALID_ARGS,
@@ -81,7 +84,7 @@ export const runSyncYnab = async (
 
   const result = await syncYnab(db, client, {
     budgetId: ctx.config.ynab.budgetId,
-    since: options.since,
+    since,
     dryRun: options.dryRun,
     resetCursor: options.resetCursor,
     logger: ctx.logger,
@@ -98,6 +101,8 @@ export const runSyncEmail = async (
   ctx: RuntimeContext,
   options: SyncEmailCommandOptions
 ): Promise<unknown> => {
+  const days = requireIntegerInRange("--days", options.days ?? 365, { min: 1, max: 36500 });
+
   if (!ctx.config.email) {
     throw new AppError("Email is not configured. Run `fintrack setup email` first.", {
       exitCode: EXIT.INVALID_ARGS,
@@ -122,7 +127,7 @@ export const runSyncEmail = async (
       accountLabel: ctx.config.email.accountLabel,
     },
     {
-      days: options.days ?? 365,
+      days,
       deepParse: options.deepParse,
       dryRun: options.dryRun,
       parserVersion: ctx.config.parserVersion,
