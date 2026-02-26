@@ -828,3 +828,41 @@ A third pass focused on strict input parsing, malformed local file handling, and
 
 - `bun x tsc --noEmit` -> pass
 - `bun test` -> pass (`19` passed, `0` failed)
+
+## 20) Fresh-Eyes QA Pass #4 (2026-02-26)
+
+A fourth pass focused on diagnostic correctness and runtime side effects.
+
+### 20.1 Issues found and fixed
+
+1. `doctor` mutated state on read-only checks
+- Problem: running `doctor` on a fresh state-dir created `config.json`, `rules.json`, and SQLite files, producing misleading existence checks and side effects.
+- Fix:
+  - added runtime mode to skip state initialization for diagnostics
+  - added existing-db-only opening path (readonly)
+  - wired `doctor` to use non-mutating runtime mode
+- Files: `src/runtime.ts`, `src/db/index.ts`, `src/cli.ts`
+
+2. `doctor` could crash on non-fintrack DB schema
+- Problem: direct queries to `schema_version` / `sync_state` tables could throw for malformed or foreign DB files.
+- Fix: wrapped DB diagnostic queries in guarded checks that emit warning checks instead of hard failure.
+- File: `src/doctor.ts`
+
+3. Config normalization robustness
+- Problem: config loader accepted malformed typed fields too permissively and could propagate unsafe values.
+- Fix:
+  - added normalization/sanitation for currency, timezone, parser version, ynab/email sections
+  - introduced readonly config loader path for non-mutating runtime
+- File: `src/config.ts`
+
+### 20.2 Tests added/updated
+
+- `test/cli-smoke.test.ts` expanded:
+  - asserts `doctor` does not create artifacts in a new state directory
+- `test/config-load.test.ts` expanded:
+  - asserts malformed config fields normalize safely to defaults/undefined sections
+
+### 20.3 Verification
+
+- `bun x tsc --noEmit` -> pass
+- `bun test` -> pass (`21` passed, `0` failed)
