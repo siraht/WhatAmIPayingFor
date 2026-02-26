@@ -711,3 +711,68 @@ A full post-implementation audit was run with static checks, CLI probes, and new
 - `bun test` -> pass (`10` passed, `0` failed)
 - Manual CLI probes confirm corrected exit semantics:
   - invalid month/date/integer now return `exit 2` with explicit error codes.
+
+## 18) Fresh-Eyes QA Pass #2 (2026-02-26)
+
+A second independent audit uncovered additional issues not caught in the first sweep.
+
+### 18.1 Issues found and fixed
+
+1. Rule-table load bug for ignore rules (runtime binding failure)
+- Problem: `rule_ignore_merchant` insert SQL required 3 bindings (`merchant_key`, `reason`, `updated_at`) but code supplied only 2.
+- Impact: loading any ignore rules could fail at runtime.
+- Fix: pass `updated_at` timestamp for ignore inserts.
+- File: `src/rules/index.ts`
+
+2. `sync all` could mask invalid user arguments
+- Problem: `sync all` caught all stage errors and continued, so user input errors could be hidden behind downstream config/auth errors.
+- Fix: invalid-argument `AppError` now short-circuits immediately.
+- File: `src/commands/sync.ts`
+
+3. `sync all` prevalidation gaps
+- Problem: `--days`/`--since` were not normalized up-front for all-stage runs.
+- Fix: added upfront normalization in `runSyncAll` and propagated normalized options to stage calls.
+- File: `src/commands/sync.ts`
+
+4. CLI option merge bug with duplicate parent/subcommand options
+- Problem: merge logic could overwrite user-provided parent option values with subcommand defaults.
+- Impact: values like `sync all --days -2` could be silently ignored.
+- Fix: merge now respects Commander option value source and avoids default-value clobbering.
+- File: `src/cli.ts`
+
+5. Email initial-cursor behavior when backfill finds zero messages
+- Problem: first run could set cursor `last_uid=0`, causing next run to scan from UID 1 and defeat cursor-driven incrementality.
+- Fix: on first empty backfill window, cursor now anchors to mailbox max UID.
+- File: `src/ingest/email.ts`
+
+6. Email logical dedupe gap within same sync batch
+- Problem: canonical dedupe looked only at persisted DB rows; duplicates in same batch could get distinct canonical IDs.
+- Fix: added in-memory logical dedupe map keyed by `message_id_hash + sender_domain + 10-min bucket`.
+- File: `src/ingest/email.ts`
+
+7. Scheduled-transaction prior key mismatch under aliases
+- Problem: scheduled payee key normalization did not leverage alias mapping, reducing scheduled prior effectiveness.
+- Fix: scheduled payee keys now run through `merchantKey` and alias normalization.
+- File: `src/derive/recurring.ts`
+
+8. Email amount parser missed plain 4+ digit values without commas
+- Problem: regex preferred grouped amounts and could miss values like `$1000.00`.
+- Fix: broadened amount regex to accept plain digit sequences as well.
+- File: `src/ingest/email.ts`
+
+9. Config/rules JSON parse failures surfaced as generic unhandled errors
+- Problem: malformed JSON in config/rules produced non-actionable runtime failures.
+- Fix: explicit `CONFIG_PARSE_FAILED` / `RULES_PARSE_FAILED` `AppError` with path and cause details.
+- File: `src/config.ts`
+
+### 18.2 Additional tests added
+
+- `test/rules-load.test.ts`
+  - verifies rules load path for alias/ignore/force without binding/runtime errors.
+- `test/cli-validation.test.ts` extended
+  - asserts `sync all --days -2` fails with invalid-argument semantics before config/auth paths.
+
+### 18.3 Verification after pass #2
+
+- `bun x tsc --noEmit` -> pass
+- `bun test` -> pass (`12` passed, `0` failed)
