@@ -776,3 +776,55 @@ A second independent audit uncovered additional issues not caught in the first s
 
 - `bun x tsc --noEmit` -> pass
 - `bun test` -> pass (`12` passed, `0` failed)
+
+## 19) Fresh-Eyes QA Pass #3 (2026-02-26)
+
+A third pass focused on strict input parsing, malformed local file handling, and subtle IMAP incrementality edge cases.
+
+### 19.1 Issues found and fixed
+
+1. Calendar-invalid dates were accepted
+- Problem: date parsing accepted values like `2026-02-30` due JS date rollover behavior.
+- Fix: strict `YYYY-MM-DD` parser now validates round-trip year/month/day.
+- File: `src/utils/time.ts`
+
+2. Empty setup inputs were silently defaulted
+- Problem: empty strings for fields like `--folders` were falling back via `||` defaulting.
+- Fix: switched to explicit trim/nullish behavior and added non-empty validation for setup inputs.
+- File: `src/commands/setup.ts`
+
+3. Numeric option parsing accepted partial values
+- Problem: values like `12abc` could partially parse.
+- Fix: parsers now return `NaN` for non-strict numeric input; validators then emit structured invalid-arg errors.
+- File: `src/cli.ts`
+
+4. NaN error details serialized as `null`
+- Problem: JSON error details obscured invalid numeric inputs.
+- Fix: validation details now serialize NaN explicitly as `"NaN"`.
+- Files: `src/utils/validate.ts`, `src/commands/report.ts`
+
+5. Config/rules valid-JSON but invalid-shape cases were under-validated
+- Problem: non-object JSON and malformed rule structures could cause confusing downstream failures.
+- Fix: added shape validation and sanitation for rule arrays/maps.
+- File: `src/config.ts`
+
+6. IMAP incremental fetch could request invalid UID ranges
+- Problem: when cursor already at mailbox max UID, fetch request could still be attempted.
+- Fix: guard fetch calls so incrementals run only when `startUid <= mailboxMaxUid`.
+- File: `src/ingest/email.ts`
+
+### 19.2 Tests added/updated
+
+- `test/cli-validation.test.ts` expanded:
+  - impossible calendar date rejection (`2026-02-30`)
+  - empty folders rejection
+  - partial integer/float value rejection
+- `test/config-load.test.ts` added:
+  - rejects non-object config JSON
+  - rejects non-object rules JSON
+  - sanitizes malformed rule entries
+
+### 19.3 Verification
+
+- `bun x tsc --noEmit` -> pass
+- `bun test` -> pass (`19` passed, `0` failed)
