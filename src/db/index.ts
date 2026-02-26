@@ -5,10 +5,17 @@ import { MIGRATIONS } from "./migrations";
 
 export class FintrackDb {
   readonly db: Database;
+  readonly isReadonly: boolean;
 
-  constructor(readonly path: string) {
-    this.db = new Database(path, { create: true });
-    this.db.exec("PRAGMA journal_mode = WAL;");
+  constructor(readonly path: string, options?: { create?: boolean; readonly?: boolean }) {
+    this.isReadonly = options?.readonly === true;
+    this.db = new Database(path, {
+      create: options?.create ?? !this.isReadonly,
+      readonly: this.isReadonly,
+    });
+    if (!this.isReadonly) {
+      this.db.exec("PRAGMA journal_mode = WAL;");
+    }
     this.db.exec("PRAGMA foreign_keys = ON;");
   }
 
@@ -19,9 +26,16 @@ export class FintrackDb {
 
 export const openDatabase = async (dbPath: string): Promise<FintrackDb> => {
   await ensureParentDir(dbPath);
-  const db = new FintrackDb(dbPath);
+  const db = new FintrackDb(dbPath, { create: true });
   applyMigrations(db);
   return db;
+};
+
+export const openExistingDatabase = (dbPath: string): FintrackDb | null => {
+  if (!existsSync(dbPath)) {
+    return null;
+  }
+  return new FintrackDb(dbPath, { readonly: true });
 };
 
 export const applyMigrations = (conn: FintrackDb): void => {

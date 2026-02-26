@@ -2,8 +2,8 @@ import { AppError } from "./errors";
 import type { GlobalFlags, RuntimePaths, FintrackConfig } from "./types";
 import { Logger } from "./logger";
 import { buildRuntimePaths, ensureStateDir } from "./utils/paths";
-import { ensureRulesFile, loadConfig } from "./config";
-import { openDatabase, type FintrackDb } from "./db";
+import { ensureRulesFile, loadConfig, loadConfigReadonly } from "./config";
+import { openDatabase, openExistingDatabase, type FintrackDb } from "./db";
 
 export interface RuntimeContext {
   flags: GlobalFlags;
@@ -15,18 +15,25 @@ export interface RuntimeContext {
 
 export const createRuntime = async (
   flags: GlobalFlags,
-  options?: { needsDb?: boolean }
+  options?: { needsDb?: boolean; initializeState?: boolean; openExistingDbOnly?: boolean }
 ): Promise<RuntimeContext> => {
   const paths = buildRuntimePaths(flags.stateDir, flags.config);
   const logger = new Logger(flags.verbose);
 
-  await ensureStateDir(paths.stateDir);
-  await ensureRulesFile(paths);
-  const config = await loadConfig(paths);
+  const initializeState = options?.initializeState !== false;
+  if (initializeState) {
+    await ensureStateDir(paths.stateDir);
+    await ensureRulesFile(paths);
+  }
+  const config = initializeState ? await loadConfig(paths) : await loadConfigReadonly(paths);
 
   let db: FintrackDb | null = null;
   if (options?.needsDb !== false) {
-    db = await openDatabase(paths.dbPath);
+    if (options?.openExistingDbOnly) {
+      db = openExistingDatabase(paths.dbPath);
+    } else {
+      db = await openDatabase(paths.dbPath);
+    }
   }
 
   return {

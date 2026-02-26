@@ -50,25 +50,43 @@ export const runDoctor = (
   });
 
   if (db) {
-    const row = db.db.query("SELECT COALESCE(MAX(version), 0) AS version FROM schema_version").get() as
-      | { version: number }
-      | undefined;
-    checks.push({
-      id: "db.schema_version",
-      ok: (row?.version ?? 0) > 0,
-      message: `Schema version ${row?.version ?? 0}`,
-      detail: row,
-    });
+    try {
+      const row = db.db.query("SELECT COALESCE(MAX(version), 0) AS version FROM schema_version").get() as
+        | { version: number }
+        | undefined;
+      checks.push({
+        id: "db.schema_version",
+        ok: (row?.version ?? 0) > 0,
+        message: `Schema version ${row?.version ?? 0}`,
+        detail: row,
+      });
+    } catch (error) {
+      checks.push({
+        id: "db.schema_version",
+        ok: false,
+        message: "Unable to read schema version",
+        detail: error instanceof Error ? error.message : String(error),
+      });
+    }
 
-    const syncRows = db.db
-      .query("SELECT source, scope, updated_at FROM sync_state ORDER BY updated_at DESC LIMIT 10")
-      .all() as Array<{ source: string; scope: string; updated_at: string }>;
-    checks.push({
-      id: "sync_state.present",
-      ok: syncRows.length > 0,
-      message: syncRows.length > 0 ? "Sync state available" : "No sync state yet",
-      detail: syncRows,
-    });
+    try {
+      const syncRows = db.db
+        .query("SELECT source, scope, updated_at FROM sync_state ORDER BY updated_at DESC LIMIT 10")
+        .all() as Array<{ source: string; scope: string; updated_at: string }>;
+      checks.push({
+        id: "sync_state.present",
+        ok: syncRows.length > 0,
+        message: syncRows.length > 0 ? "Sync state available" : "No sync state yet",
+        detail: syncRows,
+      });
+    } catch (error) {
+      checks.push({
+        id: "sync_state.present",
+        ok: false,
+        message: "Unable to read sync state table",
+        detail: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   if (config.ynab) {

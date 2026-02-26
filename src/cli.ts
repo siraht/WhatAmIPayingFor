@@ -184,10 +184,19 @@ const execute = async (
   command: Command,
   runner: (ctx: Awaited<ReturnType<typeof createRuntime>>, options: any) => Promise<any> | any,
   options: any,
-  config?: { needsDb?: boolean; allowExitCode?: boolean }
+  config?: {
+    needsDb?: boolean;
+    allowExitCode?: boolean;
+    initializeState?: boolean;
+    openExistingDbOnly?: boolean;
+  }
 ): Promise<void> => {
   const flags = getFlags(command);
-  const ctx = await createRuntime(flags, { needsDb: config?.needsDb !== false });
+  const ctx = await createRuntime(flags, {
+    needsDb: config?.needsDb !== false,
+    initializeState: config?.initializeState,
+    openExistingDbOnly: config?.openExistingDbOnly,
+  });
 
   try {
     const result = await runner(ctx, options);
@@ -344,7 +353,7 @@ program
         return { exitCode: report.exitCode, data: { action: "doctor", ...report } };
       },
       {},
-      { allowExitCode: true }
+      { allowExitCode: true, needsDb: true, initializeState: false, openExistingDbOnly: true }
     );
   });
 

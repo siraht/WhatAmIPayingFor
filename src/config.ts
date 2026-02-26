@@ -29,6 +29,107 @@ export const createDefaultConfig = (): FintrackConfig => ({
   parserVersion: DEFAULT_PARSER_VERSION,
 });
 
+const normalizeConfig = (parsed: Partial<FintrackConfig>): FintrackConfig => {
+  const defaults = createDefaultConfig();
+
+  const currencyRaw =
+    typeof parsed.currency === "string" ? parsed.currency.trim().toUpperCase() : defaults.currency;
+  const currency = /^[A-Z]{3}$/.test(currencyRaw) ? currencyRaw : defaults.currency;
+
+  const timezone =
+    typeof parsed.timezone === "string" && parsed.timezone.trim().length > 0
+      ? parsed.timezone.trim()
+      : defaults.timezone;
+
+  const parserVersion =
+    typeof parsed.parserVersion === "string" && parsed.parserVersion.trim().length > 0
+      ? parsed.parserVersion.trim()
+      : defaults.parserVersion;
+
+  const ynab =
+    parsed.ynab &&
+    typeof parsed.ynab === "object" &&
+    typeof parsed.ynab.tokenEnv === "string" &&
+    parsed.ynab.tokenEnv.trim().length > 0 &&
+    typeof parsed.ynab.budgetId === "string" &&
+    parsed.ynab.budgetId.trim().length > 0 &&
+    typeof parsed.ynab.budgetSelector === "string" &&
+    parsed.ynab.budgetSelector.trim().length > 0
+      ? {
+          tokenEnv: parsed.ynab.tokenEnv.trim(),
+          budgetId: parsed.ynab.budgetId.trim(),
+          budgetSelector: parsed.ynab.budgetSelector.trim(),
+          lastValidatedAt:
+            typeof parsed.ynab.lastValidatedAt === "string" ? parsed.ynab.lastValidatedAt : undefined,
+        }
+      : undefined;
+
+  const email =
+    parsed.email &&
+    typeof parsed.email === "object" &&
+    typeof parsed.email.imapHost === "string" &&
+    parsed.email.imapHost.trim().length > 0 &&
+    typeof parsed.email.imapPort === "number" &&
+    Number.isInteger(parsed.email.imapPort) &&
+    parsed.email.imapPort >= 1 &&
+    parsed.email.imapPort <= 65535 &&
+    typeof parsed.email.imapUser === "string" &&
+    parsed.email.imapUser.trim().length > 0 &&
+    typeof parsed.email.imapPassCmd === "string" &&
+    parsed.email.imapPassCmd.trim().length > 0 &&
+    Array.isArray(parsed.email.folders) &&
+    parsed.email.folders.every((folder) => typeof folder === "string" && folder.trim().length > 0)
+      ? {
+          imapHost: parsed.email.imapHost.trim(),
+          imapPort: parsed.email.imapPort,
+          imapUser: parsed.email.imapUser.trim(),
+          imapPassCmd: parsed.email.imapPassCmd.trim(),
+          folders: parsed.email.folders.map((folder) => folder.trim()),
+          probeBridge: parsed.email.probeBridge !== false,
+          accountLabel:
+            typeof parsed.email.accountLabel === "string" && parsed.email.accountLabel.trim().length > 0
+              ? parsed.email.accountLabel.trim()
+              : parsed.email.imapUser.trim(),
+          lastValidatedAt:
+            typeof parsed.email.lastValidatedAt === "string" ? parsed.email.lastValidatedAt : undefined,
+        }
+      : undefined;
+
+  return {
+    version: 1,
+    timezone,
+    currency,
+    parserVersion,
+    ynab,
+    email,
+  };
+};
+
+const parseConfigRaw = (raw: string, configPath: string): FintrackConfig => {
+  let parsedUnknown: unknown;
+  try {
+    parsedUnknown = JSON.parse(raw);
+  } catch (error) {
+    throw new AppError("Config file is not valid JSON", {
+      exitCode: EXIT.RUNTIME,
+      code: "CONFIG_PARSE_FAILED",
+      details: {
+        configPath,
+        cause: error instanceof Error ? error.message : String(error),
+      },
+    });
+  }
+  if (!parsedUnknown || typeof parsedUnknown !== "object" || Array.isArray(parsedUnknown)) {
+    throw new AppError("Config file must be a JSON object", {
+      exitCode: EXIT.RUNTIME,
+      code: "CONFIG_INVALID_SHAPE",
+      details: { configPath },
+    });
+  }
+
+  return normalizeConfig(parsedUnknown as Partial<FintrackConfig>);
+};
+
 export const loadConfig = async (paths: RuntimePaths): Promise<FintrackConfig> => {
   await ensureStateDir(paths.stateDir);
   if (!existsSync(paths.configPath)) {
@@ -38,33 +139,15 @@ export const loadConfig = async (paths: RuntimePaths): Promise<FintrackConfig> =
   }
 
   const raw = await readFile(paths.configPath, "utf8");
-  let parsedUnknown: unknown;
-  try {
-    parsedUnknown = JSON.parse(raw);
-  } catch (error) {
-    throw new AppError("Config file is not valid JSON", {
-      exitCode: EXIT.RUNTIME,
-      code: "CONFIG_PARSE_FAILED",
-      details: {
-        configPath: paths.configPath,
-        cause: error instanceof Error ? error.message : String(error),
-      },
-    });
+  return parseConfigRaw(raw, paths.configPath);
+};
+
+export const loadConfigReadonly = async (paths: RuntimePaths): Promise<FintrackConfig> => {
+  if (!existsSync(paths.configPath)) {
+    return createDefaultConfig();
   }
-  if (!parsedUnknown || typeof parsedUnknown !== "object" || Array.isArray(parsedUnknown)) {
-    throw new AppError("Config file must be a JSON object", {
-      exitCode: EXIT.RUNTIME,
-      code: "CONFIG_INVALID_SHAPE",
-      details: { configPath: paths.configPath },
-    });
-  }
-  const parsed = parsedUnknown as Partial<FintrackConfig>;
-  return {
-    ...createDefaultConfig(),
-    ...parsed,
-    ynab: parsed.ynab,
-    email: parsed.email,
-  };
+  const raw = await readFile(paths.configPath, "utf8");
+  return parseConfigRaw(raw, paths.configPath);
 };
 
 export const saveConfig = async (paths: RuntimePaths, config: FintrackConfig): Promise<void> => {
