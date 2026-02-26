@@ -13,8 +13,20 @@ export interface SetupYnabOptions {
 }
 
 export const runSetupYnab = async (ctx: RuntimeContext, options: SetupYnabOptions): Promise<unknown> => {
-  const tokenEnv = options.tokenEnv || YNAB_DEFAULT_TOKEN_ENV;
-  const budgetSelector = options.budgetId || "last-used";
+  const tokenEnv = (options.tokenEnv ?? YNAB_DEFAULT_TOKEN_ENV).trim();
+  const budgetSelector = (options.budgetId ?? "last-used").trim();
+  if (!tokenEnv) {
+    throw new AppError("--token-env must be non-empty", {
+      exitCode: EXIT.INVALID_ARGS,
+      code: "YNAB_TOKEN_ENV_INVALID",
+    });
+  }
+  if (!budgetSelector) {
+    throw new AppError("--budget-id must be non-empty", {
+      exitCode: EXIT.INVALID_ARGS,
+      code: "YNAB_BUDGET_ID_INVALID",
+    });
+  }
   const token = process.env[tokenEnv];
 
   let resolvedBudgetId = budgetSelector;
@@ -69,17 +81,26 @@ export interface SetupEmailOptions {
 }
 
 export const runSetupEmail = async (ctx: RuntimeContext, options: SetupEmailOptions): Promise<unknown> => {
-  const imapHost = options.imapHost || EMAIL_DEFAULT_HOST;
+  const imapHost = (options.imapHost ?? EMAIL_DEFAULT_HOST).trim();
+  if (!imapHost) {
+    throw new AppError("--imap-host must be non-empty", {
+      exitCode: EXIT.INVALID_ARGS,
+      code: "EMAIL_SETUP_HOST_INVALID",
+    });
+  }
   const imapPort = requireIntegerInRange("--imap-port", options.imapPort ?? EMAIL_DEFAULT_PORT, {
     min: 1,
     max: 65535,
   });
-  const folders = (options.folders || EMAIL_DEFAULT_FOLDERS.join(","))
+  const imapUser = options.imapUser.trim();
+  const imapPassCmd = options.imapPassCmd.trim();
+
+  const folders = (options.folders ?? EMAIL_DEFAULT_FOLDERS.join(","))
     .split(",")
     .map((value) => value.trim())
     .filter(Boolean);
 
-  if (!options.imapUser || !options.imapPassCmd) {
+  if (!imapUser || !imapPassCmd) {
     throw new AppError("setup email requires --imap-user and --imap-pass-cmd", {
       exitCode: EXIT.INVALID_ARGS,
       code: "EMAIL_SETUP_ARGS",
@@ -107,11 +128,11 @@ export const runSetupEmail = async (ctx: RuntimeContext, options: SetupEmailOpti
       email: {
         imapHost,
         imapPort,
-        imapUser: options.imapUser,
-        imapPassCmd: options.imapPassCmd,
+        imapUser,
+        imapPassCmd,
         folders,
         probeBridge: shouldProbe,
-        accountLabel: options.imapUser,
+        accountLabel: imapUser,
         lastValidatedAt: new Date().toISOString(),
       },
     }));
@@ -122,7 +143,7 @@ export const runSetupEmail = async (ctx: RuntimeContext, options: SetupEmailOpti
     dryRun: !!options.dryRun,
     imapHost,
     imapPort,
-    imapUser: options.imapUser,
+    imapUser,
     folders,
     probeBridge: shouldProbe,
     bridgeReachable,

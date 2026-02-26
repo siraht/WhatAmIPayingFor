@@ -38,9 +38,9 @@ export const loadConfig = async (paths: RuntimePaths): Promise<FintrackConfig> =
   }
 
   const raw = await readFile(paths.configPath, "utf8");
-  let parsed: Partial<FintrackConfig>;
+  let parsedUnknown: unknown;
   try {
-    parsed = JSON.parse(raw) as Partial<FintrackConfig>;
+    parsedUnknown = JSON.parse(raw);
   } catch (error) {
     throw new AppError("Config file is not valid JSON", {
       exitCode: EXIT.RUNTIME,
@@ -51,6 +51,14 @@ export const loadConfig = async (paths: RuntimePaths): Promise<FintrackConfig> =
       },
     });
   }
+  if (!parsedUnknown || typeof parsedUnknown !== "object" || Array.isArray(parsedUnknown)) {
+    throw new AppError("Config file must be a JSON object", {
+      exitCode: EXIT.RUNTIME,
+      code: "CONFIG_INVALID_SHAPE",
+      details: { configPath: paths.configPath },
+    });
+  }
+  const parsed = parsedUnknown as Partial<FintrackConfig>;
   return {
     ...createDefaultConfig(),
     ...parsed,
@@ -84,9 +92,9 @@ export const ensureRulesFile = async (paths: RuntimePaths): Promise<void> => {
 export const loadRulesFile = async (paths: RuntimePaths): Promise<RulesFile> => {
   await ensureRulesFile(paths);
   const raw = await readFile(paths.rulesPath, "utf8");
-  let parsed: Partial<RulesFile>;
+  let parsedUnknown: unknown;
   try {
-    parsed = JSON.parse(raw) as Partial<RulesFile>;
+    parsedUnknown = JSON.parse(raw);
   } catch (error) {
     throw new AppError("Rules file is not valid JSON", {
       exitCode: EXIT.RUNTIME,
@@ -97,9 +105,51 @@ export const loadRulesFile = async (paths: RuntimePaths): Promise<RulesFile> => 
       },
     });
   }
+  if (!parsedUnknown || typeof parsedUnknown !== "object" || Array.isArray(parsedUnknown)) {
+    throw new AppError("Rules file must be a JSON object", {
+      exitCode: EXIT.RUNTIME,
+      code: "RULES_INVALID_SHAPE",
+      details: { rulesPath: paths.rulesPath },
+    });
+  }
+  const parsed = parsedUnknown as Partial<RulesFile>;
+
+  const aliases =
+    parsed.aliases && typeof parsed.aliases === "object" && !Array.isArray(parsed.aliases)
+      ? Object.fromEntries(
+          Object.entries(parsed.aliases).filter(
+            ([key, value]) => typeof key === "string" && typeof value === "string"
+          )
+        )
+      : {};
+
+  const normalizeRuleArray = (
+    input: unknown
+  ): Array<{ merchant: string; reason?: string }> => {
+    if (!Array.isArray(input)) {
+      return [];
+    }
+    const out: Array<{ merchant: string; reason?: string }> = [];
+    for (const item of input) {
+      if (!item || typeof item !== "object") {
+        continue;
+      }
+      const merchant = (item as { merchant?: unknown }).merchant;
+      const reason = (item as { reason?: unknown }).reason;
+      if (typeof merchant !== "string" || merchant.trim().length === 0) {
+        continue;
+      }
+      out.push({
+        merchant,
+        reason: typeof reason === "string" ? reason : undefined,
+      });
+    }
+    return out;
+  };
+
   return {
-    aliases: parsed.aliases ?? {},
-    ignore: parsed.ignore ?? [],
-    force: parsed.force ?? [],
+    aliases,
+    ignore: normalizeRuleArray(parsed.ignore),
+    force: normalizeRuleArray(parsed.force),
   };
 };

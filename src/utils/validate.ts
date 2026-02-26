@@ -2,6 +2,8 @@ import { EXIT } from "../constants";
 import { AppError } from "../errors";
 import { parseIsoDate, parseYearMonth } from "./time";
 
+const serializableNumeric = (value: number): number | string => (Number.isNaN(value) ? "NaN" : value);
+
 export const requireIsoDate = (flagName: string, value: string): string => {
   try {
     parseIsoDate(value);
@@ -40,7 +42,7 @@ export const requireIntegerInRange = (
     throw new AppError(`${flagName} must be an integer between ${min} and ${max}`, {
       exitCode: EXIT.INVALID_ARGS,
       code: "INVALID_INTEGER_RANGE",
-      details: { flagName, value, min, max },
+      details: { flagName, value: serializableNumeric(value), min, max },
     });
   }
 

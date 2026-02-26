@@ -3,10 +3,27 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 export const todayIsoDate = (): string => new Date().toISOString().slice(0, 10);
 
 export const parseIsoDate = (value: string): Date => {
-  const parsed = new Date(`${value}T00:00:00Z`);
-  if (Number.isNaN(parsed.getTime())) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) {
     throw new Error(`Invalid ISO date: ${value}`);
   }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (month < 1 || month > 12 || day < 1 || day > 31) {
+    throw new Error(`Invalid ISO date: ${value}`);
+  }
+
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  if (
+    parsed.getUTCFullYear() !== year ||
+    parsed.getUTCMonth() !== month - 1 ||
+    parsed.getUTCDate() !== day
+  ) {
+    throw new Error(`Invalid ISO date: ${value}`);
+  }
+
   return parsed;
 };
 

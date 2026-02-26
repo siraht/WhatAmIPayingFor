@@ -15,7 +15,7 @@ const validateConfidence = (value: number): void => {
     throw new AppError("--min-confidence must be between 0 and 1", {
       exitCode: EXIT.INVALID_ARGS,
       code: "INVALID_CONFIDENCE",
-      details: { value },
+      details: { value: Number.isNaN(value) ? "NaN" : value },
     });
   }
 };

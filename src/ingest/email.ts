@@ -402,22 +402,24 @@ export const syncEmail = async (
 
         if (hasCursor) {
           const startUid = (cursor?.last_uid as number) + 1;
-          for await (const msg of client.fetch(`${startUid}:*`, {
-            uid: true,
-            envelope: true,
-            internalDate: true,
-          })) {
-            const internalDate = msg.internalDate;
-            metadataRows.push({
-              uid: msg.uid,
-              envelope: msg.envelope,
-              internalDate:
-                internalDate instanceof Date
-                  ? internalDate
-                  : internalDate
-                    ? new Date(internalDate)
-                    : new Date(),
-            });
+          if (startUid <= mailboxMaxUid) {
+            for await (const msg of client.fetch(`${startUid}:*`, {
+              uid: true,
+              envelope: true,
+              internalDate: true,
+            })) {
+              const internalDate = msg.internalDate;
+              metadataRows.push({
+                uid: msg.uid,
+                envelope: msg.envelope,
+                internalDate:
+                  internalDate instanceof Date
+                    ? internalDate
+                    : internalDate
+                      ? new Date(internalDate)
+                      : new Date(),
+              });
+            }
           }
         } else {
           const since = new Date();

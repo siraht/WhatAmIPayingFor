@@ -11,8 +11,21 @@ import { runDoctor } from "./doctor";
 import { emitJson, printTable } from "./utils/terminal";
 import { minorToDisplay } from "./utils/money";
 
-const numberParser = (value: string): number => Number.parseInt(value, 10);
-const floatParser = (value: string): number => Number.parseFloat(value);
+const numberParser = (value: string): number => {
+  const trimmed = value.trim();
+  if (!/^-?\d+$/.test(trimmed)) {
+    return Number.NaN;
+  }
+  return Number(trimmed);
+};
+
+const floatParser = (value: string): number => {
+  const trimmed = value.trim();
+  if (!/^-?(?:\d+(?:\.\d+)?|\.\d+)$/.test(trimmed)) {
+    return Number.NaN;
+  }
+  return Number(trimmed);
+};
 const mergeParentOptions = (command: Command, options: Record<string, unknown>): Record<string, unknown> => {
   const merged: Record<string, unknown> = { ...(command.parent?.opts?.() ?? {}) };
   const getSource =
