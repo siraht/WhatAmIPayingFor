@@ -1123,3 +1123,44 @@ A tenth pass implemented requested recurring-policy changes and CSV usability im
 - `bun x tsc --noEmit` -> pass
 - `bun test` -> pass (`38` passed, `0` failed)
 - `bun run export:recurring` -> generated `exports/recurring_merchants.csv` with updated cadence-specific columns.
+
+## 27) Fresh-Eyes QA Pass #11 (2026-02-27)
+
+An eleventh pass expanded inactivity handling and clarified dedupe behavior robustness.
+
+### 27.1 Issues found and fixed
+
+1. Inactivity suppression needed to apply beyond monthly cadence
+- Requirement: hide a recurring item once two expected billing cycles have elapsed without a charge, for any cadence.
+- Fix:
+  - added shared cadence activity helper:
+    - `cadenceIntervalDays(cadence)`
+    - `isInactiveByCadence(lastSeen, cadence, referenceDate, cycles=2)`
+  - `report subscriptions` now applies this inactivity gate for all cadences.
+  - `report upcoming` now applies this inactivity gate for all cadences.
+- Files:
+  - `src/report/recurring-activity.ts`
+  - `src/report/subscriptions.ts`
+  - `src/report/upcoming.ts`
+
+2. Regression coverage for non-monthly inactivity behavior
+- Added tests proving quarterly candidates are hidden only after missing more than two quarterly cycles.
+- Files:
+  - `test/report-subscriptions.test.ts`
+  - `test/report-upcoming.test.ts`
+
+### 27.2 Dedupe approach (clarification)
+
+- Recurring dedupe is heuristic-based, not a manual per-merchant exception list.
+- Current mechanism:
+  - normalizes merchant keys by removing common descriptor prefixes (`rch`, `charge`, `payment`, etc.)
+  - strips common domain suffix tokens (`com`, `net`, `org`, `io`, `co`, `uk`)
+  - collapses variant descriptors into a normalized recurring key (e.g., `RCH-KAGI.COM` -> `kagi`)
+  - selects display name via score-based preference (frequency + readability rules), not hardcoded merchant mappings.
+- File: `src/derive/recurring.ts`
+
+### 27.3 Verification
+
+- `bun test test/report-subscriptions.test.ts test/report-upcoming.test.ts test/derive-recurring.test.ts` -> pass (`13` passed, `0` failed)
+- `bun x tsc --noEmit` -> pass
+- `bun test` -> pass (`40` passed, `0` failed)
