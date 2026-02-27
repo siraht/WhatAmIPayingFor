@@ -965,3 +965,57 @@ Lessons learned:
 - `bun test test/utils-time.test.ts` -> pass (`3` passed, `0` failed)
 - `bun x tsc --noEmit` -> pass
 - `bun test` -> pass (`29` passed, `0` failed)
+
+## 24) Fresh-Eyes QA Pass #8 (2026-02-27)
+
+An eighth pass focused on spend-report clarity and transfer-like false positives in real YNAB imports.
+
+### 24.1 Issues found and fixed
+
+1. Spend JSON totals were easy to misread as dollars
+- Problem: spend reports exposed `totalMinor` only, which can be mistaken for dollars during quick checks.
+- Fix: enriched `report spend --json` output with:
+  - top-level `totalMajor`, `totalUsd`, `totalDisplay`
+  - per-row `totalMajor`, `totalUsd`, `totalDisplay`
+- Files: `src/commands/report.ts`, `README.md`
+
+Decision rationale:
+- preserve existing machine-friendly `totalMinor` while adding human-readable values.
+- keep backward compatibility for existing consumers that already parse `totalMinor`.
+
+2. Transfer-like payees could inflate spend when YNAB transfer linkage was absent
+- Problem: some imported payees (e.g., `XFR XFER ...`, `Transfer : ...`) are practical transfer flows but may not include `transfer_account_id`, allowing accidental inclusion in spend.
+- Fix: added transfer-like payee exclusion heuristic in normalization with reason code:
+  - `R_TRANSFER_LIKE_PAYEE`
+- File: `src/normalize/transactions.ts`
+
+Decision rationale:
+- prioritize conservative spend totals for recurring/subscription analysis.
+- explicit reason-code tracing keeps exclusions auditable.
+
+### 24.2 API findings captured
+
+- YNAB transaction endpoint behavior (official OpenAPI):
+  - `GET /budgets/{plan_id}/transactions` returns all non-pending transactions by default.
+  - optional query `type` supports targeted filters:
+    - `unapproved`
+    - `uncategorized`
+- implication for this tool:
+  - default sync path already imports approved + unapproved + categorized + uncategorized (excluding pending).
+  - no change required to include unapproved; those rows are already present.
+
+Usage note:
+- if needed, future enhancement can add a diagnostic subcommand that compares counts from default vs `type=unapproved`/`type=uncategorized` endpoints for reconciliation.
+
+### 24.3 Tests added/updated
+
+- `test/normalize-transactions.test.ts`
+  - added coverage excluding transfer-like payees when transfer IDs are missing.
+- `test/report-spend-json.test.ts`
+  - added coverage for JSON major/display totals and per-row unit clarity fields.
+
+### 24.4 Verification
+
+- `bun test test/normalize-transactions.test.ts test/report-spend-json.test.ts` -> pass (`3` passed, `0` failed)
+- `bun x tsc --noEmit` -> pass
+- `bun test` -> pass (`31` passed, `0` failed)

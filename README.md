@@ -102,6 +102,15 @@ fintrack
 - `4` upstream failure/rate-limit exhaustion
 - `5` partial success
 
+## Spend JSON Units
+
+`report spend --json` includes:
+- `totalMinor` (integer minor units, e.g. cents)
+- `totalMajor` / `totalUsd` (decimal major units)
+- `totalDisplay` (currency-formatted string)
+
+Rows include matching fields (`total_minor`, `totalMajor`, `totalUsd`, `totalDisplay`) to reduce unit ambiguity.
+
 ## Privacy
 
 Stored email data is limited to extracted evidence fields and operational metadata:
