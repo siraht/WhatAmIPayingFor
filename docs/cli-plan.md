@@ -1218,3 +1218,49 @@ A twelfth pass corrected CSV-specific duplication/staleness behavior and ensured
 - If a source appears out-of-date despite expected recent charges, run a one-time cursor reset with explicit range:
   - `fintrack sync ynab --reset-cursor --force --since YYYY-MM-DD`
 - For CSV outputs, dedupe now merges source labels and timeline fields; it does not discard the newest evidence row.
+
+## 29) Fresh-Eyes QA Pass #13 (2026-02-27)
+
+A thirteenth pass fixed a recurring-detection blind spot for merchants with historical price-plan changes (for example OpenAI).
+
+### 29.1 Issue found
+
+1. Current recurring amount band was being discarded by full-history amount-spread guard
+- Symptom:
+  - user reported active OpenAI `$200` charges (`2026-01-08`, `2026-02-08`) missing from recurring outputs.
+- Root cause:
+  - recurring derivation checked `$5` spread and typical amount using all historical merchant transactions.
+  - OpenAI had legacy low-amount history (`$10`, `$21.28`) plus current `$200` charges; full-history spread exceeded `$5`, so candidate was excluded.
+- File: `src/derive/recurring.ts`
+
+### 29.2 Fix implemented
+
+- Introduced an analysis window per candidate based on cadence requirements (`requiredOccurrences.maxWindowDays`) anchored at latest observed charge.
+- Applied amount-spread and amount-typical calculations to this recent analysis window (with safe fallback), instead of entire lifetime history.
+- Confidence interval variance now also uses analysis-window intervals.
+- Source evidence now records analysis-window metadata:
+  - `interval_median_days_recent`
+  - `amount_spread_minor`
+  - `analysis_window_count`
+
+### 29.3 Why this resolves user outcome
+
+- The detector now captures the active recurring band (current plan) even if legacy historical pricing differs.
+- OpenAI now appears in recurring outputs at `$200.00` monthly with recent last-seen date.
+
+### 29.4 Regression tests
+
+- Added `derive-recurring` test:
+  - merchant with older low amounts + recent stable monthly higher amount should still become recurring with current typical amount.
+  - file: `test/derive-recurring.test.ts`
+
+### 29.5 Verification
+
+- `bun test test/derive-recurring.test.ts` -> pass (`7` passed, `0` failed)
+- `bun x tsc --noEmit` -> pass
+- `bun test` -> pass (`44` passed, `0` failed)
+- live check:
+  - `recurring_candidate` now includes:
+    - `openai | OpenAI | monthly | 20000 | ... | last_seen=2026-02-08`
+  - CSV now includes OpenAI row:
+    - `merchant=OpenAI`, `monthly_usd=200.00`, `last_seen=2026-02-08`, `next_payment=2026-03-08`
