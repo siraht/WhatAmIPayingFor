@@ -377,6 +377,73 @@ describe("recomputeRecurring", () => {
     expect(result.candidates).toBe(0);
   });
 
+  test("detects current recurring amount band even when historical amounts differed", async () => {
+    handle = await createTestDb();
+    const { db } = handle;
+
+    const insert = db.db.query(
+      `INSERT INTO normalized_transaction (
+        ynab_transaction_id, budget_id, txn_date,
+        merchant_raw, merchant_canonical, merchant_key,
+        amount_minor, currency, account_name, category_name,
+        include_in_spend, eligibility_status, eligibility_reasons,
+        is_outflow, is_usage_based, source_updated_at, normalized_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`
+    );
+
+    const rows: Array<[string, string, number]> = [
+      ["oa_old_1", "2024-08-11", 1000],
+      ["oa_old_2", "2024-09-11", 2128],
+      ["oa_old_3", "2024-10-11", 2128],
+      ["oa_new_1", "2025-12-08", 20000],
+      ["oa_new_2", "2026-01-08", 20000],
+      ["oa_new_3", "2026-02-08", 20000],
+    ];
+
+    for (const [id, date, amount] of rows) {
+      insert.run(
+        id,
+        "budget_1",
+        date,
+        "OpenAI",
+        "OpenAI",
+        "openai",
+        amount,
+        "USD",
+        "Checking",
+        "AI",
+        1,
+        "eligible",
+        "[]",
+        1,
+        0
+      );
+    }
+
+    const result = recomputeRecurring(db, emptyRules);
+    expect(result.candidates).toBe(1);
+
+    const row = db.db
+      .query(
+        `SELECT cadence, typical_amount_minor, first_seen_date, last_seen_date
+         FROM recurring_candidate
+         WHERE merchant_key = 'openai'`
+      )
+      .get() as
+      | {
+          cadence: string;
+          typical_amount_minor: number;
+          first_seen_date: string;
+          last_seen_date: string;
+        }
+      | undefined;
+
+    expect(row?.cadence).toBe("monthly");
+    expect(row?.typical_amount_minor).toBe(20000);
+    expect(row?.first_seen_date).toBe("2024-08-11");
+    expect(row?.last_seen_date).toBe("2026-02-08");
+  });
+
   test("dedupes recurring merchant keys like Kagi and RCH-KAGI.COM", async () => {
     handle = await createTestDb();
     const { db } = handle;

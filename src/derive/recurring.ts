@@ -376,11 +376,6 @@ export const recomputeRecurring = (db: FintrackDb, rules: RulesIndex): Recompute
         continue;
       }
 
-      const amounts = rows.map((row) => row.amount_minor);
-      const amountSpread = Math.max(...amounts) - Math.min(...amounts);
-      if (!forceRule && amountSpread > 500) {
-        continue;
-      }
       const dates = rows.map((row) => row.txn_date);
       const intervals: number[] = [];
       for (let i = 1; i < dates.length; i += 1) {
@@ -398,9 +393,24 @@ export const recomputeRecurring = (db: FintrackDb, rules: RulesIndex): Recompute
 
       const ruleReq = requiredOccurrences(cadence);
       const lastDate = dates[dates.length - 1];
-      const recentWindowCount = rows.filter(
+      const recentWindowRows = rows.filter(
         (row) => Math.abs(diffDays(lastDate, row.txn_date)) <= ruleReq.maxWindowDays
-      ).length;
+      );
+      const recentWindowCount = recentWindowRows.length;
+
+      const analysisRows =
+        recentWindowRows.length >= Math.min(ruleReq.minCount, 2) ? recentWindowRows : rows;
+      const analysisDates = analysisRows.map((row) => row.txn_date);
+      const analysisIntervals: number[] = [];
+      for (let i = 1; i < analysisDates.length; i += 1) {
+        analysisIntervals.push(Math.abs(diffDays(analysisDates[i], analysisDates[i - 1])));
+      }
+
+      const analysisAmounts = analysisRows.map((row) => row.amount_minor);
+      const amountSpread = Math.max(...analysisAmounts) - Math.min(...analysisAmounts);
+      if (!forceRule && amountSpread > 500) {
+        continue;
+      }
 
       const scheduledSignal = scheduledByMerchant.has(merchant);
       const sparseAllowed = scheduledSignal && rows.length >= Math.max(1, ruleReq.minCount - 1);
@@ -428,10 +438,10 @@ export const recomputeRecurring = (db: FintrackDb, rules: RulesIndex): Recompute
         reasons.push(`R_INTERVAL_${cadence.toUpperCase()}`);
       }
 
-      const amountMedian = median(amounts);
-      const amountCv = amountMedian > 0 ? stddev(amounts) / amountMedian : 0;
+      const amountMedian = median(analysisAmounts);
+      const amountCv = amountMedian > 0 ? stddev(analysisAmounts) / amountMedian : 0;
       let isUsageBased = amountCv > 0.2 ? 1 : 0;
-      if (rows.some((row) => row.is_usage_based === 1)) {
+      if (analysisRows.some((row) => row.is_usage_based === 1)) {
         isUsageBased = 1;
       }
 
@@ -451,7 +461,12 @@ export const recomputeRecurring = (db: FintrackDb, rules: RulesIndex): Recompute
         reasons.push("R_MATCHED_YNAB_SCHEDULED");
       }
 
-      const intervalCv = intervals.length > 1 && medianInterval > 0 ? stddev(intervals) / medianInterval : 0.25;
+      const analysisMedianInterval =
+        analysisIntervals.length > 0 ? median(analysisIntervals) : medianInterval;
+      const intervalCv =
+        analysisIntervals.length > 1 && analysisMedianInterval > 0
+          ? stddev(analysisIntervals) / analysisMedianInterval
+          : 0.25;
       let confidence = 0.2;
       confidence += Math.max(0, 0.35 * (1 - Math.min(1, intervalCv * 2)));
       confidence += isUsageBased ? 0.05 : 0.2;
@@ -487,7 +502,7 @@ export const recomputeRecurring = (db: FintrackDb, rules: RulesIndex): Recompute
 
       const firstSeenDate = dates[0];
       const lastSeenDate = dates[dates.length - 1];
-      const predictedNextDate = predictNextDate(lastSeenDate, cadence, medianInterval || 30);
+      const predictedNextDate = predictNextDate(lastSeenDate, cadence, analysisMedianInterval || 30);
 
       const inserted = insertCandidate.run(
         merchant,
@@ -504,8 +519,11 @@ export const recomputeRecurring = (db: FintrackDb, rules: RulesIndex): Recompute
         JSON.stringify(Array.from(new Set(reasons))),
         JSON.stringify({
           interval_median_days: medianInterval,
+          interval_median_days_recent: analysisMedianInterval,
           interval_cv: Number(intervalCv.toFixed(4)),
           amount_cv: Number(amountCv.toFixed(4)),
+          amount_spread_minor: amountSpread,
+          analysis_window_count: analysisRows.length,
           email_match_count: emailMatchCount,
           scheduled_signal: scheduledSignal,
           sparse_allowed: sparseAllowed,
