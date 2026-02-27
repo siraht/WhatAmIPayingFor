@@ -1164,3 +1164,57 @@ An eleventh pass expanded inactivity handling and clarified dedupe behavior robu
 - `bun test test/report-subscriptions.test.ts test/report-upcoming.test.ts test/derive-recurring.test.ts` -> pass (`13` passed, `0` failed)
 - `bun x tsc --noEmit` -> pass
 - `bun test` -> pass (`40` passed, `0` failed)
+
+## 28) Fresh-Eyes QA Pass #12 (2026-02-27)
+
+A twelfth pass corrected CSV-specific duplication/staleness behavior and ensured dedupe preserves merged payment history.
+
+### 28.1 Issues found and fixed
+
+1. CSV export was not enforcing active/inactive policy
+- Problem: `export:recurring` wrote all `recurring_candidate` rows, including stale merchants that report commands already hide.
+- User-visible symptom: historical rename chains appeared as duplicates (for example insurance biller-name transitions).
+- Fix:
+  - export now reuses cadence-aware inactivity logic (`2` missed expected cycles) before writing rows.
+  - file: `src/tools/export-recurring-csv.ts`
+
+2. CSV dedupe needed merge semantics (not suppress semantics)
+- Problem: duplicate handling needed to preserve timeline evidence (first/last seen across variants) instead of dropping one merchant row.
+- Fix:
+  - added merge pass that clusters likely duplicate candidates and preserves:
+    - `first_seen` = earliest across merged set
+    - `last_seen` = latest across merged set
+    - `source_merchant_name` = joined list of merged source labels
+  - merge signals:
+    - lexical token similarity (generalized normalization)
+    - insurance handoff heuristic for near-contiguous cadence + amount chains
+  - file: `src/tools/export-recurring-csv.ts`
+
+3. Export module refactor for testability
+- Added `import.meta.main` entrypoint guard and exported pure helpers to support direct unit testing of merge/filter behavior.
+
+### 28.2 Tests added
+
+- `test/recurring-csv.test.ts`
+  - merges insurance rename chain and preserves full timeline
+  - does not merge unrelated equal-price subscriptions
+  - filters inactive rows after two missed cadence cycles
+
+### 28.3 Validation and data diagnostics
+
+- `bun test test/recurring-csv.test.ts` -> pass (`3` passed, `0` failed)
+- `bun x tsc --noEmit` -> pass
+- `bun test` -> pass (`43` passed, `0` failed)
+- `bun run export:recurring` -> generated active-only CSV (`rows=12`)
+- YNAB recency diagnostic:
+  - forced reset sync to avoid cursor ambiguity:
+    - `fintrack sync ynab --reset-cursor --force --since 2025-08-27`
+    - pulled `677` transactions
+  - direct DB queries still show no `Kagi` payee/memo rows dated on/after `2025-08-27`.
+  - implication: missing recent Kagi visibility is source-data labeling/sync-content related, not export dedupe dropping the newest payment row.
+
+### 28.4 Usage notes learned during implementation
+
+- If a source appears out-of-date despite expected recent charges, run a one-time cursor reset with explicit range:
+  - `fintrack sync ynab --reset-cursor --force --since YYYY-MM-DD`
+- For CSV outputs, dedupe now merges source labels and timeline fields; it does not discard the newest evidence row.
