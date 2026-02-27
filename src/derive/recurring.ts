@@ -10,6 +10,7 @@ interface TxnRow {
   txn_date: string;
   amount_minor: number;
   currency: string;
+  category_name: string | null;
   is_usage_based: number;
 }
 
@@ -141,6 +142,47 @@ const isDiscretionaryMerchant = (merchantKey: string): boolean => {
   return /(coffee|restaurant|uber|lyft|doordash|amazon|target|walmart)/i.test(merchantKey);
 };
 
+const isGroceryOrFuelFoodMerchant = (merchantKey: string, rows: TxnRow[]): boolean => {
+  const merchantHit = [
+    /whole\s+foods/i,
+    /trader\s+joe/i,
+    /natural\s+grocers/i,
+    /\bh\s*e\s*b\b/i,
+    /safeway/i,
+    /king\s+soopers/i,
+    /costco/i,
+    /walmart\s+grocery/i,
+    /kroger/i,
+    /maverik/i,
+    /chevron/i,
+    /\bshell\b/i,
+    /\bexxon\b/i,
+    /\bbp\b/i,
+    /7\s*eleven/i,
+    /circle\s*k/i,
+    /market/i,
+    /bento/i,
+    /taco/i,
+    /torchy/i,
+  ].some((pattern) => pattern.test(merchantKey));
+
+  if (merchantHit) {
+    return true;
+  }
+
+  const categorySignals = rows
+    .map((row) => (row.category_name || "").toLowerCase())
+    .filter(Boolean);
+  if (categorySignals.length === 0) {
+    return false;
+  }
+
+  const categoryHits = categorySignals.filter((value) =>
+    /(grocery|grocer|dining|restaurant|food|fuel|gas|market)/i.test(value)
+  ).length;
+  return categoryHits / categorySignals.length >= 0.5;
+};
+
 export interface RecomputeRecurringResult {
   candidates: number;
   occurrences: number;
@@ -150,7 +192,7 @@ export const recomputeRecurring = (db: FintrackDb, rules: RulesIndex): Recompute
   const txRows = db.db
     .query(
       `SELECT ynab_transaction_id, merchant_key, merchant_canonical, txn_date,
-              amount_minor, currency, is_usage_based
+              amount_minor, currency, category_name, is_usage_based
        FROM normalized_transaction
        WHERE include_in_spend = 1 AND is_outflow = 1
        ORDER BY merchant_key, txn_date`
@@ -233,6 +275,9 @@ export const recomputeRecurring = (db: FintrackDb, rules: RulesIndex): Recompute
       if (ignoreRule && !forceRule) {
         continue;
       }
+      if (!forceRule && isGroceryOrFuelFoodMerchant(merchant, rows)) {
+        continue;
+      }
 
       const amounts = rows.map((row) => row.amount_minor);
       const dates = rows.map((row) => row.txn_date);
@@ -251,12 +296,15 @@ export const recomputeRecurring = (db: FintrackDb, rules: RulesIndex): Recompute
       }
 
       const ruleReq = requiredOccurrences(cadence);
-      const windowSpan = Math.abs(diffDays(dates[dates.length - 1], dates[0]));
+      const lastDate = dates[dates.length - 1];
+      const recentWindowCount = rows.filter(
+        (row) => Math.abs(diffDays(lastDate, row.txn_date)) <= ruleReq.maxWindowDays
+      ).length;
 
       const scheduledSignal = scheduledByMerchant.has(merchant);
       const sparseAllowed = scheduledSignal && rows.length >= Math.max(1, ruleReq.minCount - 1);
       const enoughOccurrences =
-        rows.length >= ruleReq.minCount && windowSpan <= ruleReq.maxWindowDays;
+        recentWindowCount >= ruleReq.minCount;
 
       if (!enoughOccurrences && !sparseAllowed && !forceRule) {
         continue;
