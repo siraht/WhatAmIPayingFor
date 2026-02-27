@@ -3,15 +3,19 @@ import type { RulesIndex } from "../rules";
 import { clampDayToMonth, diffDays, isoNow, parseIsoDate } from "../utils/time";
 import { merchantKey } from "../utils/text";
 
-interface TxnRow {
+interface TxnRowRaw {
   ynab_transaction_id: string;
-  merchant_key: string;
+  raw_merchant_key: string;
   merchant_canonical: string;
   txn_date: string;
   amount_minor: number;
   currency: string;
   category_name: string | null;
   is_usage_based: number;
+}
+
+interface TxnRow extends TxnRowRaw {
+  merchant_key: string;
 }
 
 interface ScheduledRow {
@@ -142,6 +146,89 @@ const isDiscretionaryMerchant = (merchantKey: string): boolean => {
   return /(coffee|restaurant|uber|lyft|doordash|amazon|target|walmart)/i.test(merchantKey);
 };
 
+const DOMAIN_SUFFIXES = new Set([
+  "com",
+  "net",
+  "org",
+  "io",
+  "co",
+  "uk",
+]);
+
+const normalizeRecurringMerchantKey = (input: string): string => {
+  const base = merchantKey(input);
+  if (!base) {
+    return base;
+  }
+
+  let tokens = base.split(" ").filter(Boolean);
+  while (tokens.length > 1 && /^(rch|recurring|charge|payment|purchase|pos)$/.test(tokens[0])) {
+    tokens = tokens.slice(1);
+  }
+  while (tokens.length > 1 && DOMAIN_SUFFIXES.has(tokens[tokens.length - 1])) {
+    tokens = tokens.slice(0, -1);
+  }
+
+  if (tokens.length === 0) {
+    return base;
+  }
+
+  if (tokens.length >= 2 && tokens[0].length <= 2) {
+    tokens = tokens.slice(1);
+  }
+
+  return tokens.join(" ");
+};
+
+const toTitleCase = (value: string): string => {
+  return value
+    .split(" ")
+    .filter(Boolean)
+    .map((token) => token.slice(0, 1).toUpperCase() + token.slice(1))
+    .join(" ");
+};
+
+const preferredMerchantDisplay = (merchantKeyNorm: string, rows: TxnRow[]): string => {
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    const label = (row.merchant_canonical || "").trim();
+    if (!label) {
+      continue;
+    }
+    counts.set(label, (counts.get(label) ?? 0) + 1);
+  }
+
+  const scored = Array.from(counts.entries()).map(([label, count]) => {
+    let score = count * 10;
+    if (!/\./.test(label)) {
+      score += 3;
+    }
+    if (!/^rch[\s.-]/i.test(label)) {
+      score += 2;
+    }
+    const norm = normalizeRecurringMerchantKey(label);
+    if (norm === merchantKeyNorm) {
+      score += 4;
+    }
+    if (/\s/.test(label)) {
+      score += 1;
+    }
+    return { label, score };
+  });
+
+  scored.sort((a, b) => {
+    if (b.score !== a.score) {
+      return b.score - a.score;
+    }
+    if (a.label.length !== b.label.length) {
+      return a.label.length - b.label.length;
+    }
+    return a.label.localeCompare(b.label);
+  });
+
+  return scored[0]?.label ?? toTitleCase(merchantKeyNorm || "unknown");
+};
+
 const isGroceryOrFuelFoodMerchant = (merchantKey: string, rows: TxnRow[]): boolean => {
   const merchantHit = [
     /whole\s+foods/i,
@@ -189,15 +276,19 @@ export interface RecomputeRecurringResult {
 }
 
 export const recomputeRecurring = (db: FintrackDb, rules: RulesIndex): RecomputeRecurringResult => {
-  const txRows = db.db
+  const txRowsRaw = db.db
     .query(
-      `SELECT ynab_transaction_id, merchant_key, merchant_canonical, txn_date,
+      `SELECT ynab_transaction_id, merchant_key AS raw_merchant_key, merchant_canonical, txn_date,
               amount_minor, currency, category_name, is_usage_based
        FROM normalized_transaction
        WHERE include_in_spend = 1 AND is_outflow = 1
        ORDER BY merchant_key, txn_date`
     )
-    .all() as TxnRow[];
+    .all() as TxnRowRaw[];
+  const txRows = txRowsRaw.map((row) => ({
+    ...row,
+    merchant_key: normalizeRecurringMerchantKey(row.raw_merchant_key),
+  }));
 
   const winnerRows = db.db
     .query(
@@ -208,7 +299,11 @@ export const recomputeRecurring = (db: FintrackDb, rules: RulesIndex): Recompute
        GROUP BY nt.merchant_key`
     )
     .all() as Array<{ merchant_key: string; match_count: number }>;
-  const emailMatches = new Map<string, number>(winnerRows.map((row) => [row.merchant_key, row.match_count]));
+  const emailMatches = new Map<string, number>();
+  for (const row of winnerRows) {
+    const key = normalizeRecurringMerchantKey(row.merchant_key);
+    emailMatches.set(key, (emailMatches.get(key) ?? 0) + row.match_count);
+  }
 
   const scheduledRows = db.db
     .query(
@@ -224,7 +319,7 @@ export const recomputeRecurring = (db: FintrackDb, rules: RulesIndex): Recompute
     }
     const rawKey = merchantKey(row.payee_name || "unknown");
     const aliased = rules.aliasByRawKey.get(rawKey);
-    const key = merchantKey(aliased ?? rawKey);
+    const key = normalizeRecurringMerchantKey(merchantKey(aliased ?? rawKey));
     if (!key) {
       continue;
     }
@@ -269,8 +364,10 @@ export const recomputeRecurring = (db: FintrackDb, rules: RulesIndex): Recompute
       rows.sort((a, b) => a.txn_date.localeCompare(b.txn_date));
       const reasons: string[] = [];
 
-      const ignoreRule = rules.ignore.has(merchant);
-      const forceRule = rules.force.has(merchant);
+      const ignoreRule =
+        rules.ignore.has(merchant) || rows.some((row) => rules.ignore.has(row.raw_merchant_key));
+      const forceRule =
+        rules.force.has(merchant) || rows.some((row) => rules.force.has(row.raw_merchant_key));
 
       if (ignoreRule && !forceRule) {
         continue;
@@ -280,6 +377,10 @@ export const recomputeRecurring = (db: FintrackDb, rules: RulesIndex): Recompute
       }
 
       const amounts = rows.map((row) => row.amount_minor);
+      const amountSpread = Math.max(...amounts) - Math.min(...amounts);
+      if (!forceRule && amountSpread > 500) {
+        continue;
+      }
       const dates = rows.map((row) => row.txn_date);
       const intervals: number[] = [];
       for (let i = 1; i < dates.length; i += 1) {
@@ -339,6 +440,7 @@ export const recomputeRecurring = (db: FintrackDb, rules: RulesIndex): Recompute
       } else {
         reasons.push("R_AMOUNT_STABLE");
       }
+      reasons.push("R_AMOUNT_SPREAD_WITHIN_5USD");
 
       const emailMatchCount = emailMatches.get(merchant) ?? 0;
       if (emailMatchCount > 0) {
@@ -389,7 +491,7 @@ export const recomputeRecurring = (db: FintrackDb, rules: RulesIndex): Recompute
 
       const inserted = insertCandidate.run(
         merchant,
-        rows[0].merchant_canonical,
+        preferredMerchantDisplay(merchant, rows),
         cadence,
         Math.round(amountMedian),
         rows[0].currency,

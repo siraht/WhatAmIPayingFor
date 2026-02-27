@@ -1,5 +1,5 @@
 import type { FintrackDb } from "../db";
-import { monthRange } from "../utils/time";
+import { diffDays, monthRange } from "../utils/time";
 
 export interface SubscriptionsReportOptions {
   month: string;
@@ -31,6 +31,9 @@ export const reportSubscriptions = (
   options: SubscriptionsReportOptions
 ): SubscriptionsReport => {
   const range = monthRange(options.month);
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  const todayIso = today.toISOString().slice(0, 10);
 
   const rows = db.db
     .query(
@@ -79,6 +82,7 @@ export const reportSubscriptions = (
       isUsageBased: row.is_usage_based === 1,
       reasonCodes: JSON.parse(row.reason_codes) as string[],
     }))
+    .filter((row) => !(row.cadence === "monthly" && diffDays(todayIso, row.lastChargeDate) > 56))
     .filter((row) => options.includeUsageBased || !row.isUsageBased);
 
   return {

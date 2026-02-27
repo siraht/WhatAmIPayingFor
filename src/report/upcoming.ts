@@ -91,10 +91,13 @@ const cadenceIntervalDays = (cadence: string): number => {
 };
 
 const isStaleForForecast = (candidate: CandidateRow, fromDate: string): boolean => {
+  const daysSinceLastSeen = Math.max(0, diffDays(fromDate, candidate.last_seen_date));
+  if (candidate.cadence === "monthly" && daysSinceLastSeen > 56) {
+    return true;
+  }
   if (candidate.predicted_next_date >= fromDate) {
     return false;
   }
-  const daysSinceLastSeen = Math.max(0, diffDays(fromDate, candidate.last_seen_date));
   const staleThreshold = Math.max(90, cadenceIntervalDays(candidate.cadence) * 4);
   return daysSinceLastSeen > staleThreshold;
 };
