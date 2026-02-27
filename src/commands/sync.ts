@@ -7,6 +7,7 @@ import { loadRulesFile } from "../config";
 import { recomputeDerivedLayers } from "../pipeline";
 import { confirm } from "../utils/prompt";
 import { requireIntegerInRange, requireIsoDate } from "../utils/validate";
+import { monthsAgoIsoDate } from "../utils/time";
 
 export interface SyncYnabCommandOptions {
   since?: string;
@@ -22,6 +23,8 @@ export interface SyncEmailCommandOptions {
   resetCursor?: boolean;
   force?: boolean;
 }
+
+const DEFAULT_YNAB_BOOTSTRAP_MONTHS = 6;
 
 const ensureResetSafety = async (
   ctx: RuntimeContext,
@@ -55,7 +58,9 @@ export const runSyncYnab = async (
   ctx: RuntimeContext,
   options: SyncYnabCommandOptions
 ): Promise<unknown> => {
-  const since = options.since ? requireIsoDate("--since", options.since) : undefined;
+  const since = options.since
+    ? requireIsoDate("--since", options.since)
+    : monthsAgoIsoDate(DEFAULT_YNAB_BOOTSTRAP_MONTHS);
 
   if (!ctx.config.ynab) {
     throw new AppError("YNAB is not configured. Run `fintrack setup ynab` first.", {
@@ -152,7 +157,9 @@ export const runSyncAll = async (ctx: RuntimeContext, options: SyncAllOptions): 
   exitCode: number;
   data: unknown;
 }> => {
-  const normalizedSince = options.since ? requireIsoDate("--since", options.since) : undefined;
+  const normalizedSince = options.since
+    ? requireIsoDate("--since", options.since)
+    : monthsAgoIsoDate(DEFAULT_YNAB_BOOTSTRAP_MONTHS);
   const normalizedDays = requireIntegerInRange("--days", options.days ?? 365, { min: 1, max: 36500 });
   const normalizedOptions: SyncAllOptions = {
     ...options,

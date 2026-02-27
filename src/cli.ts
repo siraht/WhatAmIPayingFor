@@ -262,7 +262,7 @@ setup
 const sync = program
   .command("sync")
   .description("sync source data and rebuild derived layers")
-  .option("--since <YYYY-MM-DD>", "since date for YNAB bootstrap")
+  .option("--since <YYYY-MM-DD>", "since date for YNAB bootstrap (default: 6 months ago)")
   .option("--days <n>", "email backfill days when no cursor", numberParser, 365)
   .option("--deep-parse", "force full body parsing")
   .option("--dry-run", "show what would sync without writing")
@@ -275,7 +275,7 @@ const sync = program
 sync
   .command("ynab")
   .description("sync YNAB transactions and scheduled transactions")
-  .option("--since <YYYY-MM-DD>", "since date for first bootstrap")
+  .option("--since <YYYY-MM-DD>", "since date for first bootstrap (default: 6 months ago)")
   .option("--dry-run", "show what would sync")
   .option("--reset-cursor", "reset sync cursor")
   .option("--force", "skip reset confirmation")
@@ -300,7 +300,7 @@ sync
 sync
   .command("all")
   .description("sync YNAB then email then recompute derived insights")
-  .option("--since <YYYY-MM-DD>", "since date for YNAB bootstrap")
+  .option("--since <YYYY-MM-DD>", "since date for YNAB bootstrap (default: 6 months ago)")
   .option("--days <n>", "email backfill days when no cursor", numberParser, 365)
   .option("--deep-parse", "force parse of all email candidates")
   .option("--dry-run", "show what would sync")

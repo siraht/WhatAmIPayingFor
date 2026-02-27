@@ -80,3 +80,22 @@ export const clampDayToMonth = (year: number, month1Based: number, day: number):
   const lastDay = new Date(Date.UTC(year, month1Based, 0)).getUTCDate();
   return Math.min(day, lastDay);
 };
+
+export const monthsAgoIsoDate = (months: number, now: Date = new Date()): string => {
+  if (!Number.isInteger(months) || months < 0) {
+    throw new Error(`Invalid months offset: ${months}`);
+  }
+
+  const current = new Date(now.getTime());
+  current.setUTCHours(0, 0, 0, 0);
+  const targetDay = current.getUTCDate();
+
+  current.setUTCDate(1);
+  current.setUTCMonth(current.getUTCMonth() - months);
+  const lastDay = new Date(
+    Date.UTC(current.getUTCFullYear(), current.getUTCMonth() + 1, 0)
+  ).getUTCDate();
+  current.setUTCDate(Math.min(targetDay, lastDay));
+
+  return current.toISOString().slice(0, 10);
+};
