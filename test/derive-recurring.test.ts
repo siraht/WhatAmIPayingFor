@@ -444,6 +444,135 @@ describe("recomputeRecurring", () => {
     expect(row?.last_seen_date).toBe("2026-02-08");
   });
 
+  test("splits same-merchant monthly streams when charges are separated by three-plus days", async () => {
+    handle = await createTestDb();
+    const { db } = handle;
+
+    const insert = db.db.query(
+      `INSERT INTO normalized_transaction (
+        ynab_transaction_id, budget_id, txn_date,
+        merchant_raw, merchant_canonical, merchant_key,
+        amount_minor, currency, account_name, category_name,
+        include_in_spend, eligibility_status, eligibility_reasons,
+        is_outflow, is_usage_based, source_updated_at, normalized_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`
+    );
+
+    const dates = [
+      "2025-12-08",
+      "2026-01-08",
+      "2026-02-08",
+      "2025-12-13",
+      "2026-01-13",
+      "2026-02-13",
+    ];
+
+    for (let i = 0; i < dates.length; i += 1) {
+      insert.run(
+        `openai_stream_${i + 1}`,
+        "budget_1",
+        dates[i],
+        "OpenAI",
+        "OpenAI",
+        "openai",
+        20000,
+        "USD",
+        "Checking",
+        "AI",
+        1,
+        "eligible",
+        "[]",
+        1,
+        0
+      );
+    }
+
+    const result = recomputeRecurring(db, emptyRules);
+    expect(result.candidates).toBe(2);
+
+    const rows = db.db
+      .query(
+        `SELECT merchant_key, merchant_display, cadence, predicted_next_date
+         FROM recurring_candidate
+         WHERE merchant_key LIKE 'openai%'
+         ORDER BY merchant_key`
+      )
+      .all() as Array<{
+      merchant_key: string;
+      merchant_display: string;
+      cadence: string;
+      predicted_next_date: string;
+    }>;
+
+    expect(rows.length).toBe(2);
+    expect(rows.map((row) => row.merchant_key)).toEqual(["openai", "openai :: s2"]);
+    expect(rows.every((row) => row.cadence === "monthly")).toBe(true);
+    expect(new Set(rows.map((row) => row.predicted_next_date))).toEqual(
+      new Set(["2026-03-08", "2026-03-13"])
+    );
+    expect(rows.some((row) => row.merchant_display.includes("[~8]"))).toBe(true);
+    expect(rows.some((row) => row.merchant_display.includes("[~13]"))).toBe(true);
+  });
+
+  test("does not split stable biweekly merchants into pseudo-monthly streams", async () => {
+    handle = await createTestDb();
+    const { db } = handle;
+
+    const insert = db.db.query(
+      `INSERT INTO normalized_transaction (
+        ynab_transaction_id, budget_id, txn_date,
+        merchant_raw, merchant_canonical, merchant_key,
+        amount_minor, currency, account_name, category_name,
+        include_in_spend, eligibility_status, eligibility_reasons,
+        is_outflow, is_usage_based, source_updated_at, normalized_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`
+    );
+
+    const dates = [
+      "2025-10-01",
+      "2025-10-15",
+      "2025-10-29",
+      "2025-11-12",
+      "2025-11-26",
+      "2025-12-10",
+      "2025-12-24",
+    ];
+
+    for (let i = 0; i < dates.length; i += 1) {
+      insert.run(
+        `biweekly_${i + 1}`,
+        "budget_1",
+        dates[i],
+        "Payroll Service",
+        "Payroll Service",
+        "payroll service",
+        2500,
+        "USD",
+        "Checking",
+        "Income Offset",
+        1,
+        "eligible",
+        "[]",
+        1,
+        0
+      );
+    }
+
+    const result = recomputeRecurring(db, emptyRules);
+    expect(result.candidates).toBe(1);
+
+    const row = db.db
+      .query(
+        `SELECT merchant_key, cadence
+         FROM recurring_candidate
+         WHERE merchant_key LIKE 'payroll service%'`
+      )
+      .get() as { merchant_key: string; cadence: string } | undefined;
+
+    expect(row?.merchant_key).toBe("payroll service");
+    expect(row?.cadence).toBe("biweekly");
+  });
+
   test("dedupes recurring merchant keys like Kagi and RCH-KAGI.COM", async () => {
     handle = await createTestDb();
     const { db } = handle;

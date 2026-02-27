@@ -70,6 +70,35 @@ describe("recurring csv dedupe", () => {
     expect(merged).toHaveLength(2);
   });
 
+  test("does not merge concurrent same-merchant streams with different billing days", () => {
+    const rows: CandidateRow[] = [
+      {
+        merchant_display: "OpenAI [~8]",
+        cadence: "monthly",
+        typical_amount_minor: 20000,
+        first_seen_date: "2025-12-08",
+        last_seen_date: "2026-02-08",
+        predicted_next_date: "2026-03-08",
+        confidence: 0.7,
+      },
+      {
+        merchant_display: "OpenAI [~13]",
+        cadence: "monthly",
+        typical_amount_minor: 20000,
+        first_seen_date: "2025-12-13",
+        last_seen_date: "2026-02-13",
+        predicted_next_date: "2026-03-13",
+        confidence: 0.68,
+      },
+    ];
+
+    const merged = mergeLikelyDuplicateCandidates(rows);
+    expect(merged).toHaveLength(2);
+    expect(new Set(merged.map((row) => row.predicted_next_date))).toEqual(
+      new Set(["2026-03-08", "2026-03-13"])
+    );
+  });
+
   test("filters inactive rows after two missed cadence cycles", () => {
     const merged = mergeLikelyDuplicateCandidates([
       {
