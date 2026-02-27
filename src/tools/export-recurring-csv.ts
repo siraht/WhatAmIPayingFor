@@ -219,6 +219,25 @@ const shouldMergeByName = (a: CandidateRow, b: CandidateRow): boolean => {
   return similarity >= 0.5;
 };
 
+const dateRangesOverlap = (a: CandidateRow, b: CandidateRow): boolean =>
+  a.first_seen_date <= b.last_seen_date && b.first_seen_date <= a.last_seen_date;
+
+const isLikelyConcurrentDistinctStream = (a: CandidateRow, b: CandidateRow): boolean => {
+  if (a.cadence !== b.cadence) {
+    return false;
+  }
+  const similarity = tokenSimilarity(a.merchant_display, b.merchant_display);
+  if (similarity < 0.85) {
+    return false;
+  }
+  if (!dateRangesOverlap(a, b)) {
+    return false;
+  }
+  const cadenceDays = cadenceIntervalDays(a.cadence);
+  const nextDateGap = Math.abs(diffDays(a.predicted_next_date, b.predicted_next_date));
+  return nextDateGap >= 3 && nextDateGap <= cadenceDays;
+};
+
 const isInsuranceLike = (merchantDisplay: string): boolean => {
   const category = categoryFor(merchantDisplay);
   if (category === "Insurance/Health") {
@@ -297,6 +316,10 @@ export const mergeLikelyDuplicateCandidates = (rows: CandidateRow[]): MergedCand
       const latestGroupRow = groupByLastSeen[groupByLastSeen.length - 1];
       const earlier = latestGroupRow.last_seen_date <= row.last_seen_date ? latestGroupRow : row;
       const later = earlier === row ? latestGroupRow : row;
+
+      if (isLikelyConcurrentDistinctStream(representative, row)) {
+        continue;
+      }
 
       if (shouldMergeByName(representative, row) || shouldMergeByInsuranceHandoff(earlier, later)) {
         group.push(row);
