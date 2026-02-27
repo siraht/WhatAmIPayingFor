@@ -1019,3 +1019,51 @@ Usage note:
 - `bun test test/normalize-transactions.test.ts test/report-spend-json.test.ts` -> pass (`3` passed, `0` failed)
 - `bun x tsc --noEmit` -> pass
 - `bun test` -> pass (`31` passed, `0` failed)
+
+## 25) Fresh-Eyes QA Pass #9 (2026-02-27)
+
+A ninth pass focused on recurring-quality corrections after deeper YNAB backfill.
+
+### 25.1 Issues found and fixed
+
+1. Long-running subscriptions were dropped when history exceeded cadence window
+- Problem: recurring detection required the full merchant history span to fit `maxWindowDays`, which incorrectly removed real long-running subscriptions after importing older history.
+- Fix: evaluate recurrence using recent-window occurrence count (anchored to latest charge) rather than total-history span.
+- File: `src/derive/recurring.ts`
+
+Rationale:
+- recurrence quality should be driven by recent cadence behavior, not penalized for long account history.
+
+2. Grocery/fuel/food merchants needed stricter exclusion
+- Problem: category and merchant variants (e.g., `H-E-B`, `... Market`) could still appear as recurring.
+- Fix: added hard exclusion heuristic for grocery/fuel/food using:
+  - merchant-name patterns
+  - category-signal majority check (`grocery`, `dining`, `food`, `fuel`, `gas`, `market`)
+  - `force` rules still override exclusions when explicitly configured.
+- File: `src/derive/recurring.ts`
+
+Rationale:
+- recurring-subscription outputs should avoid routine consumption merchants by default.
+
+### 25.2 Tests added/updated
+
+- `test/derive-recurring.test.ts`
+  - added regression for long-running monthly subscriptions remaining detectable.
+  - added regression excluding food/fuel cadence via category signals without explicit merchant keyword.
+
+### 25.3 Live-data findings (deep sync diagnostic)
+
+- After resetting cursor and syncing from `2024-01-01`, YNAB import returned `2752` transactions.
+- Observed payees:
+  - `OpenAI` present historically (latest observed: `2025-08-11`)
+  - `Claude` present and now detected as recurring candidate
+  - `OVH` not present in imported payee names for the pulled dataset
+
+Interpretation:
+- missing expected merchants can stem from data-window recency and real charge gaps, not only detection heuristics.
+
+### 25.4 Verification
+
+- `bun test test/derive-recurring.test.ts` -> pass (`4` passed, `0` failed)
+- `bun x tsc --noEmit` -> pass
+- `bun test` -> pass (`34` passed, `0` failed)
