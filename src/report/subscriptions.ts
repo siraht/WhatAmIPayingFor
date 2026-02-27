@@ -1,5 +1,6 @@
 import type { FintrackDb } from "../db";
-import { diffDays, monthRange } from "../utils/time";
+import { monthRange } from "../utils/time";
+import { isInactiveByCadence } from "./recurring-activity";
 
 export interface SubscriptionsReportOptions {
   month: string;
@@ -82,7 +83,7 @@ export const reportSubscriptions = (
       isUsageBased: row.is_usage_based === 1,
       reasonCodes: JSON.parse(row.reason_codes) as string[],
     }))
-    .filter((row) => !(row.cadence === "monthly" && diffDays(todayIso, row.lastChargeDate) > 56))
+    .filter((row) => !isInactiveByCadence(row.lastChargeDate, row.cadence, todayIso, 2))
     .filter((row) => options.includeUsageBased || !row.isUsageBased);
 
   return {

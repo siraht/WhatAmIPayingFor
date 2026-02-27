@@ -1,5 +1,6 @@
 import type { FintrackDb } from "../db";
 import { diffDays, parseIsoDate } from "../utils/time";
+import { cadenceIntervalDays, isInactiveByCadence } from "./recurring-activity";
 
 interface CandidateRow {
   id: number;
@@ -71,35 +72,15 @@ const advanceCadence = (date: Date, cadence: string): Date => {
   }
 };
 
-const cadenceIntervalDays = (cadence: string): number => {
-  switch (cadence) {
-    case "weekly":
-      return 7;
-    case "biweekly":
-      return 14;
-    case "every_4_weeks":
-      return 28;
-    case "monthly":
-      return 30;
-    case "quarterly":
-      return 91;
-    case "yearly":
-      return 365;
-    default:
-      return 30;
-  }
-};
-
 const isStaleForForecast = (candidate: CandidateRow, fromDate: string): boolean => {
-  const daysSinceLastSeen = Math.max(0, diffDays(fromDate, candidate.last_seen_date));
-  if (candidate.cadence === "monthly" && daysSinceLastSeen > 56) {
+  if (isInactiveByCadence(candidate.last_seen_date, candidate.cadence, fromDate, 2)) {
     return true;
   }
   if (candidate.predicted_next_date >= fromDate) {
     return false;
   }
-  const staleThreshold = Math.max(90, cadenceIntervalDays(candidate.cadence) * 4);
-  return daysSinceLastSeen > staleThreshold;
+  const daysSinceLastSeen = Math.max(0, diffDays(fromDate, candidate.last_seen_date));
+  return daysSinceLastSeen > cadenceIntervalDays(candidate.cadence) * 3;
 };
 
 const mondayOfWeek = (isoDate: string): string => {
