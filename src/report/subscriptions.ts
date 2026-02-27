@@ -40,10 +40,20 @@ export const reportSubscriptions = (
        FROM recurring_candidate
        WHERE confidence >= ?
          AND first_seen_date <= ?
-         AND (predicted_next_date >= ? OR last_seen_date >= ?)
+         AND (
+           (last_seen_date BETWEEN ? AND ?)
+           OR (predicted_next_date BETWEEN ? AND ?)
+         )
        ORDER BY confidence DESC, merchant_key ASC`
     )
-    .all(options.minConfidence, range.end, range.start, range.start) as Array<{
+    .all(
+      options.minConfidence,
+      range.end,
+      range.start,
+      range.end,
+      range.start,
+      range.end
+    ) as Array<{
     merchant_display: string;
     merchant_key: string;
     cadence: string;
