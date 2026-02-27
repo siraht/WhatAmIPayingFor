@@ -151,7 +151,7 @@ fintrack doctor --json
   - `--no-probe-bridge`
   - `--dry-run`
 - `sync ynab`:
-  - `--since <YYYY-MM-DD>`
+  - `--since <YYYY-MM-DD>` (default bootstrap: `today - 6 months`)
   - `--dry-run`
 - `sync email`:
   - `--days <n>` default `365`
@@ -929,3 +929,39 @@ Lesson learned:
 - `bun test test/report-subscriptions.test.ts` -> pass (`1` passed, `0` failed)
 - `bun x tsc --noEmit` -> pass
 - `bun test` -> pass (`26` passed, `0` failed)
+
+## 23) Fresh-Eyes QA Pass #7 (2026-02-27)
+
+A seventh pass focused on first-run usability and predictable bootstrap scope.
+
+### 23.1 Decision implemented
+
+1. Default YNAB bootstrap window set to 6 months
+- Prior behavior: when no YNAB cursor existed and `--since` was omitted, sync delegated range behavior to upstream API defaults.
+- Change: `sync ynab` and `sync all` now default `--since` to `today - 6 calendar months` for first bootstrap runs.
+- Files: `src/commands/sync.ts`, `src/utils/time.ts`, `src/cli.ts`
+
+Rationale:
+- reduces first-run payload size and sync time for common recurring-analysis onboarding.
+- matches user expectation for recent-subscription/spend analysis while keeping override support for deeper history.
+
+Usage notes:
+- default path: `fintrack sync ynab` (imports last 6 months on first run).
+- override path: `fintrack sync ynab --since YYYY-MM-DD`.
+- once a cursor exists, incremental sync uses cursor knowledge; `--since` only matters for bootstrap/reset flows.
+
+Lessons learned:
+- bootstrap defaults should be explicit and deterministic in code/docs instead of depending on external API default semantics.
+
+### 23.2 Tests added
+
+- `test/utils-time.test.ts`
+  - validates calendar-month subtraction semantics for bootstrap date computation.
+  - validates month-end clamp behavior (e.g., Mar 31 -> Feb 28).
+  - validates input guard for invalid negative offsets.
+
+### 23.3 Verification
+
+- `bun test test/utils-time.test.ts` -> pass (`3` passed, `0` failed)
+- `bun x tsc --noEmit` -> pass
+- `bun test` -> pass (`29` passed, `0` failed)

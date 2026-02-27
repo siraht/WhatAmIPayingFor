@@ -52,6 +52,10 @@ fintrack setup email \
 # Sync all sources then recompute derived layers
 fintrack sync all --days 365
 
+# YNAB bootstrap window defaults to the last 6 months.
+# Override for deeper history when needed:
+fintrack sync ynab --since 2024-01-01
+
 # Reports
 fintrack report spend --month 2026-02 --group-by merchant
 fintrack report subscriptions --month 2026-02 --explain
