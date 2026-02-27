@@ -306,4 +306,154 @@ describe("recomputeRecurring", () => {
     const result = recomputeRecurring(db, emptyRules);
     expect(result.candidates).toBe(0);
   });
+
+  test("rejects recurring candidates when amount spread exceeds five dollars", async () => {
+    handle = await createTestDb();
+    const { db } = handle;
+
+    const insert = db.db.query(
+      `INSERT INTO normalized_transaction (
+        ynab_transaction_id, budget_id, txn_date,
+        merchant_raw, merchant_canonical, merchant_key,
+        amount_minor, currency, account_name, category_name,
+        include_in_spend, eligibility_status, eligibility_reasons,
+        is_outflow, is_usage_based, source_updated_at, normalized_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`
+    );
+
+    insert.run(
+      "var_1",
+      "budget_1",
+      "2025-10-01",
+      "Example SaaS",
+      "Example SaaS",
+      "example saas",
+      1000,
+      "USD",
+      "Checking",
+      "Subscriptions",
+      1,
+      "eligible",
+      "[]",
+      1,
+      0
+    );
+    insert.run(
+      "var_2",
+      "budget_1",
+      "2025-11-01",
+      "Example SaaS",
+      "Example SaaS",
+      "example saas",
+      1700,
+      "USD",
+      "Checking",
+      "Subscriptions",
+      1,
+      "eligible",
+      "[]",
+      1,
+      0
+    );
+    insert.run(
+      "var_3",
+      "budget_1",
+      "2025-12-01",
+      "Example SaaS",
+      "Example SaaS",
+      "example saas",
+      1000,
+      "USD",
+      "Checking",
+      "Subscriptions",
+      1,
+      "eligible",
+      "[]",
+      1,
+      0
+    );
+
+    const result = recomputeRecurring(db, emptyRules);
+    expect(result.candidates).toBe(0);
+  });
+
+  test("dedupes recurring merchant keys like Kagi and RCH-KAGI.COM", async () => {
+    handle = await createTestDb();
+    const { db } = handle;
+
+    const insert = db.db.query(
+      `INSERT INTO normalized_transaction (
+        ynab_transaction_id, budget_id, txn_date,
+        merchant_raw, merchant_canonical, merchant_key,
+        amount_minor, currency, account_name, category_name,
+        include_in_spend, eligibility_status, eligibility_reasons,
+        is_outflow, is_usage_based, source_updated_at, normalized_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`
+    );
+
+    insert.run(
+      "kagi_1",
+      "budget_1",
+      "2025-10-29",
+      "RCH-KAGI.COM",
+      "RCH-KAGI.COM",
+      "rch kagi com",
+      1000,
+      "USD",
+      "Checking",
+      "Subscriptions",
+      1,
+      "eligible",
+      "[]",
+      1,
+      0
+    );
+    insert.run(
+      "kagi_2",
+      "budget_1",
+      "2025-11-29",
+      "Kagi",
+      "Kagi",
+      "kagi",
+      1000,
+      "USD",
+      "Checking",
+      "Subscriptions",
+      1,
+      "eligible",
+      "[]",
+      1,
+      0
+    );
+    insert.run(
+      "kagi_3",
+      "budget_1",
+      "2025-12-29",
+      "Kagi",
+      "Kagi",
+      "kagi",
+      1000,
+      "USD",
+      "Checking",
+      "Subscriptions",
+      1,
+      "eligible",
+      "[]",
+      1,
+      0
+    );
+
+    const result = recomputeRecurring(db, emptyRules);
+    expect(result.candidates).toBe(1);
+
+    const row = db.db
+      .query(
+        `SELECT merchant_key, merchant_display
+         FROM recurring_candidate`
+      )
+      .get() as { merchant_key: string; merchant_display: string } | undefined;
+
+    expect(row?.merchant_key).toBe("kagi");
+    expect(row?.merchant_display).toBe("Kagi");
+  });
 });

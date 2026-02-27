@@ -109,4 +109,45 @@ describe("reportUpcoming", () => {
     expect(merchants.has("stale-monthly")).toBe(false);
     expect(merchants.has("active-monthly")).toBe(true);
   });
+
+  test("excludes monthly candidates with no charge in over 8 weeks even if next date is upcoming", async () => {
+    handle = await createTestDb();
+    const { db } = handle;
+
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+
+    const staleLast = new Date(today);
+    staleLast.setUTCDate(staleLast.getUTCDate() - 70);
+    const upcomingNext = new Date(today);
+    upcomingNext.setUTCDate(upcomingNext.getUTCDate() + 3);
+
+    db.db
+      .query(
+        `INSERT INTO recurring_candidate (
+          merchant_key, merchant_display, cadence, typical_amount_minor,
+          currency, occurrences_count, first_seen_date, last_seen_date,
+          predicted_next_date, confidence, is_usage_based, reason_codes,
+          source_evidence_json, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`
+      )
+      .run(
+        "monthly-inactive",
+        "Monthly Inactive",
+        "monthly",
+        1299,
+        "USD",
+        12,
+        "2024-01-01",
+        staleLast.toISOString().slice(0, 10),
+        upcomingNext.toISOString().slice(0, 10),
+        0.9,
+        0,
+        "[]",
+        "{}"
+      );
+
+    const report = reportUpcoming(db, 10, 0.1);
+    expect(report.rows.some((row) => row.merchantKey === "monthly-inactive")).toBe(false);
+  });
 });
