@@ -6,6 +6,8 @@ import { isoNow } from "../utils/time";
 
 const REFUND_RX = /(refund|reimburse|reversal|chargeback)/i;
 const USAGE_RX = /(utility|meter|usage|kwh|gb|data|electric|water|gas)/i;
+const TRANSFER_MARKER_RX = /\b(xfr|xfer)\b/i;
+const TRANSFER_PREFIX_RX = /^transfer\s*:/i;
 
 interface RawTxn {
   ynab_transaction_id: string;
@@ -109,6 +111,14 @@ export const normalizeTransactions = (
       if (row.transfer_account_id) {
         includeInSpend = 0;
         reasons.push("R_TRANSFER");
+      }
+      if (
+        TRANSFER_MARKER_RX.test(merchantRaw) ||
+        TRANSFER_PREFIX_RX.test(merchantRaw) ||
+        TRANSFER_PREFIX_RX.test(row.memo || "")
+      ) {
+        includeInSpend = 0;
+        reasons.push("R_TRANSFER_LIKE_PAYEE");
       }
 
       if (row.parent_transaction_id) {

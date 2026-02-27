@@ -7,8 +7,10 @@ import { reportSpend, type SpendGroupBy } from "../report/spend";
 import { reportSubscriptions } from "../report/subscriptions";
 import { renderUpcomingVisual, reportUpcoming } from "../report/upcoming";
 import { requireIntegerInRange, requireOneOf, requireYearMonth } from "../utils/validate";
+import { minorToDisplay } from "../utils/money";
 
 const defaultMonth = (): string => new Date().toISOString().slice(0, 7);
+const minorToMajor = (minor: number): number => Number((minor / 100).toFixed(2));
 
 const validateConfidence = (value: number): void => {
   if (!Number.isFinite(value) || value < 0 || value > 1) {
@@ -49,10 +51,25 @@ export const runReportSpend = async (ctx: RuntimeContext, options: ReportSpendOp
   }
 
   const report = reportSpend(ctx.db, month, groupBy);
+  const rows = report.rows.map((row) => {
+    const totalMajor = minorToMajor(row.total_minor);
+    return {
+      ...row,
+      totalMajor,
+      totalUsd: totalMajor,
+      totalDisplay: minorToDisplay(row.total_minor, ctx.config.currency),
+    };
+  });
+  const totalMajor = minorToMajor(report.totalMinor);
+
   return {
     action: "report.spend",
     currency: ctx.config.currency,
     ...report,
+    rows,
+    totalMajor,
+    totalUsd: totalMajor,
+    totalDisplay: minorToDisplay(report.totalMinor, ctx.config.currency),
   };
 };
 
