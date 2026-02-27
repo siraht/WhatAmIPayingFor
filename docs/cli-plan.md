@@ -896,3 +896,36 @@ A fifth pass focused on forecast realism and merchant-domain normalization quali
 
 - `bun x tsc --noEmit` -> pass
 - `bun test` -> pass (`25` passed, `0` failed)
+
+## 22) Fresh-Eyes QA Pass #6 (2026-02-26)
+
+A sixth pass focused on report correctness for monthly subscription views.
+
+### 22.1 Issue found and fixed
+
+1. `report subscriptions --month` leaked far-future predictions
+- Problem: query predicate used `predicted_next_date >= month_start`, so subscriptions with a next charge many months ahead were included in the selected month report.
+- User impact: monthly subscription output could include out-of-scope merchants, reducing trust and making monthly review noisy.
+- Fix: constrained month inclusion to candidates with either:
+  - `last_seen_date` within the selected month, or
+  - `predicted_next_date` within the selected month.
+- File: `src/report/subscriptions.ts`
+
+Decision rationale:
+- the report accepts an explicit `--month`, so inclusion should be scoped to that month window.
+- this aligns rows with user expectation for month-focused review and avoids over-reporting long-gap future events.
+
+Lesson learned:
+- month-bound report predicates must enforce both lower and upper bounds to avoid accidental superset behavior.
+
+### 22.2 Regression test added
+
+- `test/report-subscriptions.test.ts`
+  - verifies rows are returned only when last or next charge falls inside the selected month.
+  - guards against reintroducing far-future candidate leakage.
+
+### 22.3 Verification
+
+- `bun test test/report-subscriptions.test.ts` -> pass (`1` passed, `0` failed)
+- `bun x tsc --noEmit` -> pass
+- `bun test` -> pass (`26` passed, `0` failed)
