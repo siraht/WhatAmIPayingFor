@@ -1264,3 +1264,66 @@ A thirteenth pass fixed a recurring-detection blind spot for merchants with hist
     - `openai | OpenAI | monthly | 20000 | ... | last_seen=2026-02-08`
   - CSV now includes OpenAI row:
     - `merchant=OpenAI`, `monthly_usd=200.00`, `last_seen=2026-02-08`, `next_payment=2026-03-08`
+
+## 30) Fresh-Eyes QA Pass #14 (2026-02-27)
+
+This pass implemented multi-subscription detection for same-merchant recurring charges when billing days are separated (3+ days), while protecting against false splits.
+
+### 30.1 User-driven requirement
+
+- Requirement: detect multiple subscriptions under one merchant when there are multiple charges per month separated by at least ~3 days (for example two concurrent plans), rather than flattening into a single merchant stream.
+
+### 30.2 Core implementation
+
+1. Merchant stream splitting in recurring derivation
+- Added merchant stream splitter to `src/derive/recurring.ts`:
+  - checks intra-month multi-charge pattern with day spread >= 3
+  - clusters transactions by billing-day anchors
+  - emits separate recurring candidates per stream
+- Conservative gates to avoid noisy splits:
+  - only considers months with 2-3 charges (avoids weekly/high-frequency merchants)
+  - requires split signal in at least 2 months
+  - blocks split when cadence is stably weekly/biweekly/every-4-weeks (low interval CV)
+
+2. Stream-specific recurring evaluation
+- Each stream is scored independently for cadence, amount stability, confidence, and activity.
+- For true multi-stream monthly merchants, minimum occurrence threshold is relaxed from 3 -> 2 per stream to capture concurrent plans faster.
+- Stream metadata added to evidence JSON:
+  - `stream_anchor_day`
+  - `stream_group_count`
+  - `multi_stream_mode`
+
+3. CSV dedupe protection for concurrent streams
+- Updated `src/tools/export-recurring-csv.ts` dedupe logic to avoid merging concurrent same-merchant streams that have overlapping active windows and distinct upcoming billing dates.
+- Keeps rename-handoff dedupe behavior for true descriptor transitions.
+
+### 30.3 Tests added/updated
+
+- `test/derive-recurring.test.ts`
+  - new: splits same merchant into two monthly recurring streams when billing days differ by >=3 days across months.
+  - new: does not split stable biweekly cadence into pseudo-monthly streams.
+- `test/recurring-csv.test.ts`
+  - new: concurrent same-merchant streams are not merged in CSV dedupe.
+
+### 30.4 Validation
+
+- `bun test test/derive-recurring.test.ts test/recurring-csv.test.ts` -> pass
+- `bun x tsc --noEmit` -> pass
+- `bun test` -> pass (`47` passed, `0` failed)
+
+### 30.5 Live-data outcome
+
+- OpenAI now surfaces in recurring outputs with current active monthly amount:
+  - `merchant=OpenAI`
+  - `monthly_usd=200.00`
+  - `last_seen=2026-02-08`
+  - `next_payment=2026-03-08`
+- Export path:
+  - `exports/recurring_merchants.csv`
+
+### 30.6 Implementation learnings
+
+- Multi-stream detection is best treated as an opt-in mode activated only with repeated split evidence across months; single-month anomalies should not trigger stream splitting globally.
+- Split-vs-dedupe interplay must be tested together:
+  - recurring derivation may intentionally produce multiple stream candidates
+  - export dedupe must preserve those when streams are concurrent, while still collapsing rename handoffs.
