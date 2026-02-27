@@ -1067,3 +1067,59 @@ Interpretation:
 - `bun test test/derive-recurring.test.ts` -> pass (`4` passed, `0` failed)
 - `bun x tsc --noEmit` -> pass
 - `bun test` -> pass (`34` passed, `0` failed)
+
+## 26) Fresh-Eyes QA Pass #10 (2026-02-27)
+
+A tenth pass implemented requested recurring-policy changes and CSV usability improvements.
+
+### 26.1 Issues found and fixed
+
+1. Amount-variance guard for recurring stability
+- Requirement: if repeated charges differ by more than `$5`, treat as likely non-recurring.
+- Fix: recurring derivation now requires amount spread within `500` minor units unless merchant is force-ruled.
+- File: `src/derive/recurring.ts`
+
+2. Monthly inactivity suppression (8-week rule)
+- Requirement: monthly charges with no observed payment in over 8 weeks should not be surfaced as active.
+- Fix:
+  - `report upcoming`: excludes monthly candidates when `today - last_seen_date > 56 days`.
+  - `report subscriptions`: filters monthly rows by the same inactivity rule.
+- Files: `src/report/upcoming.ts`, `src/report/subscriptions.ts`
+
+3. Merchant dedupe improvement (`Kagi` vs `RCH-KAGI.COM`)
+- Requirement: treat obvious processor/descriptor variants as one merchant.
+- Fix: added recurring-key normalization and display preference logic so grouped candidates collapse variants (e.g., `rch kagi com` -> `kagi`).
+- File: `src/derive/recurring.ts`
+
+4. CSV schema updated for cadence-specific cost fields
+- Requirement: yearly charges should populate `yearly_usd` rather than `monthly_usd`.
+- Fix: added reusable export script with cadence-specific cost columns:
+  - `weekly_usd`, `biweekly_usd`, `every_4_weeks_usd`, `monthly_usd`, `quarterly_usd`, `yearly_usd`
+  - plus `typical_charge_usd` and `monthly_equivalent_usd` for comparability.
+- Files: `src/tools/export-recurring-csv.ts`, `package.json`, `README.md`
+
+### 26.2 Tests added/updated
+
+- `test/derive-recurring.test.ts`
+  - rejects candidates when amount spread exceeds `$5`.
+  - validates key dedupe (`Kagi` and `RCH-KAGI.COM` collapse).
+- `test/report-upcoming.test.ts`
+  - excludes monthly candidates inactive for >8 weeks even when projected next date is soon.
+- `test/report-subscriptions.test.ts`
+  - hides monthly rows inactive for >8 weeks.
+
+### 26.3 Live-data findings relevant to user feedback
+
+- Plex stale observation:
+  - current imported YNAB transaction range tops out at `2025-12-31`, so no Jan/Feb 2026 observations exist to refresh `last_seen`.
+  - this is a source-data recency gap, not solely a recurrence heuristic issue.
+- OpenAI/ChatGPT visibility:
+  - `OpenAI` payees exist historically but with sparse/variable amounts and no recent cadence in imported data.
+  - under new `$5` spread rule + cadence requirements, they are not promoted as active recurring.
+
+### 26.4 Verification
+
+- `bun test test/derive-recurring.test.ts test/report-subscriptions.test.ts test/report-upcoming.test.ts` -> pass (`11` passed, `0` failed)
+- `bun x tsc --noEmit` -> pass
+- `bun test` -> pass (`38` passed, `0` failed)
+- `bun run export:recurring` -> generated `exports/recurring_merchants.csv` with updated cadence-specific columns.

@@ -111,6 +111,17 @@ fintrack
 
 Rows include matching fields (`total_minor`, `totalMajor`, `totalUsd`, `totalDisplay`) to reduce unit ambiguity.
 
+## Recurring CSV Export
+
+```bash
+bun run export:recurring
+# optional custom output path and db path:
+bun run src/tools/export-recurring-csv.ts exports/recurring.csv ~/.fintrack/fintrack.db
+```
+
+CSV fields include cadence-specific cost columns (`weekly_usd`, `monthly_usd`, `yearly_usd`, etc.).  
+Only the column matching the merchant cadence is populated.
+
 ## Privacy
 
 Stored email data is limited to extracted evidence fields and operational metadata:
